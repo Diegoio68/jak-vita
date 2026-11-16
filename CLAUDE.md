@@ -101,6 +101,14 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   a u32 en math.gc (rango 0.97x-1.21x por función), por debajo del umbral del 15-20 %.
   No se hace narrowing a 32 bits en Fase 2; queda como optimización de Fase 6, solo en
   funciones calientes que señale el perfilado y solo si el tipo GOAL lo garantiza.
+  Actualización (con llamadas, Vita real): total +21 %; las llamadas cuestan +23-44 % con
+  u64 (en ARMv7 cada arg u64 ocupa 2 registros y a partir del 3.º van a la pila). Ojo: hay
+  ruido de ±35 % por función entre builds con el mismo código (seekl u32: 71.8 -> 45.0 ns).
+  Decisión: se mantiene u64 como base; el riesgo 3 sigue ABIERTO. Línea a estudiar tras la
+  Fase 2 con perfil del juego real en la Vita: ABI tipada que pase en 32 bits los argumentos
+  y retornos cuyo tipo GOAL lo garantice (float, punteros, basic) y reconstruya el valor
+  exacto en el llamado, validada contra la versión u64.
+  Logs: build-vita/bench_fase1_sin_llamadas.txt y build-vita/bench.txt (no versionados).
 
 ## Fases
 0. Fork compila en PC; extractor corre con el ISO de Jak 1. Hello world vitaGL en Vita.
