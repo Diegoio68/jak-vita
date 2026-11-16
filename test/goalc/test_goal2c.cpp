@@ -401,6 +401,8 @@ const Goal2CFile kGameFiles[] = {
     {"matrix", "goal_src/jak1/engine/math/matrix.gc", "\"4x4-inverse\" "},
     {"transform", "goal_src/jak1/engine/math/transform.gc", "\"matrix-calc\" "},
     {"quaternion", "goal_src/jak1/engine/math/quaternion.gc", "\"slerp\" "},
+    {"trigonometry", "goal_src/jak1/engine/math/trigonometry.gc", "\"atan\" "},
+    {"euler", "goal_src/jak1/engine/math/euler.gc", "\"eul->matrix\" "},
 };
 
 //! Transpila el fichero, comprueba que su C compila limpio y guarda la referencia de goalc
@@ -435,6 +437,12 @@ TEST_F(Goal2CTests, Transform) {
 }
 TEST_F(Goal2CTests, Quaternion) {
   transpile_and_reference(shared->compiler, kGameFiles[3]);
+}
+TEST_F(Goal2CTests, Trigonometry) {
+  transpile_and_reference(shared->compiler, kGameFiles[4]);
+}
+TEST_F(Goal2CTests, Euler) {
+  transpile_and_reference(shared->compiler, kGameFiles[5]);
 }
 
 /*!
@@ -574,4 +582,10 @@ TEST_F(Goal2CMixedTests, TransformInGame) {
 }
 TEST_F(Goal2CMixedTests, QuaternionInGame) {
   compare_in_game(shared->compiler, lib_build_output, kGameFiles[3]);
+}
+TEST_F(Goal2CMixedTests, TrigonometryInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[4]);
+}
+TEST_F(Goal2CMixedTests, EulerInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[5]);
 }

@@ -121,9 +121,21 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   manejador de SIGFPE que dice el offset EE; con las líneas "[link and exec] ... : 0x..." del
   log se encuentra el objeto.
 - Variables de pila de GOAL (new 'stack...): IR_GetStackAddr -> array local alineado a 16
-  por función (g2c_stk); dirección GOAL = dirección real - g2c_mem.
+  por función (g2c_stk); dirección GOAL = dirección real - g2c_mem. IMPRESCINDIBLE el
+  `__asm__ volatile("" : : "r"(g2c_stk) : "memory")` tras declararlo y que G2C_ADDR calcule
+  la dirección como entero: si no, gcc -O2 no le reserva sitio en el marco (solo ve su
+  dirección como entero) y las llamadas lo machacan (fallo real visto en euler.gc).
 - Validados en el juego (2026-11-16): math 19, vector 68, matrix 43, transform 5,
-  quaternion 52/53 (quaternion-validate lee pp con with-pp; pendiente de soportar pp).
+  quaternion 52/53, trigonometry 38, euler 5 (quaternion-validate lee pp; pendiente).
+
+### Contador de avance (reportarlo en UNA línea al final de cada entrega)
+- `python3 goalc/c_backend/tools/progress.py` (unos 20 s; `--reuse` no recompila). Ejecuta
+  goal2c sobre todos los objetos de código de Jak 1 (all_objs.json, versión 3) escribiendo en
+  out/goal2c/jak1/all/ (FUERA de la librería del juego) y cuenta:
+  total de funciones, traducibles (goal2c las traduce) y en C (validadas en el juego = los .c
+  de out/goal2c/jak1/). Tabla por carpeta en out/goal2c/jak1/progress.txt.
+- Línea a copiar al final de la entrega: la última que imprime ("Avance goal2c: ...").
+- Bloqueo principal (2026-11-16): 4199 funciones usan pp (rlet sobre r13: self/procesos).
 - OBLIGATORIO además: `test/goal2c/boot_smoke.sh` (juego real sin ventana 45 s con la
   librería; exige que no falle, que instale funciones y que avance tras cargar el nivel).
   Los tests de goalc-test NO ejecutan código en la pila x86 nativa; el juego sí.

@@ -1,0 +1,33 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/math/euler.gc (goalc x86 frente a goal2c en el juego).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+;; El 4.º elemento de euler-angles codifica el orden de los ejes (0..23).
+
+(define *g2c-ea* (new 'global 'euler-angles))
+(define *g2c-eo* (new 'global 'euler-angles))
+(define *g2c-em* (new 'global 'matrix))
+(define *g2c-eq* (new 'global 'quaternion))
+
+(defun g2c-euler-order ((order int))
+  "convierte a matriz y quaternion y vuelve a euler con un orden dado"
+  (set-eul! *g2c-ea* 0.3 -1.1 2.0 order)
+  (g2c-pv "set-eul" *g2c-ea*)
+  (g2c-pm "eul->matrix" (eul->matrix *g2c-em* *g2c-ea*))
+  (g2c-pv "matrix->eul" (matrix->eul *g2c-eo* *g2c-em* order))
+  (g2c-pv "eul->quat" (eul->quat *g2c-eq* *g2c-ea*))
+  (g2c-pv "quat->eul" (quat->eul *g2c-eo* *g2c-eq* order))
+  0)
+
+(defun g2c-euler-cases ()
+  (g2c-euler-order 0)
+  (g2c-euler-order 1)
+  (g2c-euler-order 3)
+  (g2c-euler-order 6)
+  (g2c-euler-order 13)
+  (g2c-euler-order 21)
+  ;; caso degenerado (gimbal lock): segundo ángulo de 90 grados
+  (set-eul! *g2c-ea* 0.5 1.5707964 -0.25 0)
+  (g2c-pv "gimbal-matrix->eul" (matrix->eul *g2c-eo* (eul->matrix *g2c-em* *g2c-ea*) 0))
+  0)
+
+(g2c-euler-cases)

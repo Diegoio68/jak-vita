@@ -233,6 +233,10 @@ std::string CFunctionWriter::finish(const std::string& c_name) {
   if (m_uses_stack) {
     int bytes = std::max(16, m_env->stack_slots_used_for_stack_vars() * 8);
     out += fmt::format("  uint8_t g2c_stk[{}] __attribute__((aligned(16)));\n", bytes);
+    // El C solo usa la dirección de g2c_stk convertida a entero; sin esto el compilador puede
+    // no reservarle sitio real en el marco y las llamadas lo machacan. El asm vacío hace que
+    // la dirección escape: el array existe toda la función y cualquier llamada puede tocarlo.
+    out += "  __asm__ volatile(\"\" : : \"r\"(g2c_stk) : \"memory\");\n";
   }
   // declaraciones (todas al principio: los goto no pueden saltarse inicializaciones)
   for (auto& [id, t] : m_vars) {

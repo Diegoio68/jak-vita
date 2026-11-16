@@ -133,11 +133,14 @@ static inline uint32_t g2c_f_to_bits(float f) {
 }
 
 /* ---- memoria GOAL (memcpy: seguro con accesos no alineados en ARM; gcc lo optimiza) ---- */
-/* Dirección real = base + dirección GOAL. Se suma como uintptr_t, no como u32: en el PC, el
-   código GOAL que corre en la pila x86 nativa (fuera de la memoria GOAL) pasa direcciones de
-   pila "rsp - base" de 64 bits, y goalc x86 las suma enteras a r15. En la Vita uintptr_t es de
-   32 bits y todo vive en la memoria GOAL, así que equivale a truncar a 32 bits. */
-#define G2C_ADDR(a) (g2c_mem + (uintptr_t)(a))
+/* Dirección real = base + dirección GOAL, sumada como uintptr_t (no como u32): en el PC, el
+   código GOAL que corre en la pila x86 nativa pasa direcciones de pila "rsp - base" de 64
+   bits, y goalc x86 las suma enteras a r15. En la Vita uintptr_t es de 32 bits y todo vive en
+   la memoria GOAL, así que equivale a truncar a 32 bits.
+   Se calcula como entero y se convierte a puntero (no como g2c_mem + a): una dirección GOAL
+   puede apuntar fuera del bloque g2c_mem (p. ej. la pila de C de goal2c, g2c_stk), y con
+   aritmética de punteros el compilador podría suponer que nunca toca otros objetos. */
+#define G2C_ADDR(a) ((uint8_t*)((uintptr_t)g2c_mem + (uintptr_t)(a)))
 #define G2C_DEF_LOAD(name, T)                   \
   static inline T name(g2c_gpr a) {             \
     T v;                                        \
