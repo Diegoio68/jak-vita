@@ -133,7 +133,11 @@ static inline uint32_t g2c_f_to_bits(float f) {
 }
 
 /* ---- memoria GOAL (memcpy: seguro con accesos no alineados en ARM; gcc lo optimiza) ---- */
-#define G2C_ADDR(a) (g2c_mem + (uint32_t)(a))
+/* Dirección real = base + dirección GOAL. Se suma como uintptr_t, no como u32: en el PC, el
+   código GOAL que corre en la pila x86 nativa (fuera de la memoria GOAL) pasa direcciones de
+   pila "rsp - base" de 64 bits, y goalc x86 las suma enteras a r15. En la Vita uintptr_t es de
+   32 bits y todo vive en la memoria GOAL, así que equivale a truncar a 32 bits. */
+#define G2C_ADDR(a) (g2c_mem + (uintptr_t)(a))
 #define G2C_DEF_LOAD(name, T)                   \
   static inline T name(g2c_gpr a) {             \
     T v;                                        \
@@ -179,6 +183,211 @@ static inline uint32_t g2c_umod32(uint32_t a, uint32_t b) { return b ? a % b : 0
 static inline int32_t g2c_f2i(float f) {
   if (f >= -2147483648.0f && f < 2147483648.0f) return (int32_t)f;
   return INT32_MIN;
+}
+
+/* ---- registros de 128 bits (clases VECTOR_FLOAT e INT_128 de goalc) ----
+   Mismo tipo para las dos: los movimientos entre ellas copian los 128 bits. Semántica de cada
+   operación = la de goalc x86, que a su vez sigue la MIPS de la PS2 (src1 = rs, src2 = rt).
+   C portable por ahora; en la Fase 6 se pasará a NEON. */
+typedef union {
+  float f[4];
+  uint32_t w[4];
+  int32_t sw[4];
+  uint64_t d[2];
+  uint16_t h[8];
+  int16_t sh[8];
+  uint8_t b[16];
+  int8_t sb[16];
+} __attribute__((aligned(16))) g2c_q;
+
+static inline g2c_q g2c_ld_q(g2c_gpr a) {
+  g2c_q v;
+  memcpy(&v, G2C_ADDR(a), 16);
+  return v;
+}
+static inline void g2c_st_q(g2c_gpr a, g2c_q v) {
+  memcpy(G2C_ADDR(a), &v, 16);
+}
+static inline g2c_q g2c_q_from_gpr(g2c_gpr x) { /* movq xmm, r64: parte alta a cero */
+  g2c_q r;
+  r.d[0] = (uint64_t)x;
+  r.d[1] = 0;
+  return r;
+}
+static inline g2c_q g2c_q_set_f0(g2c_q q, float x) { /* movss reg,reg: solo el elemento 0 */
+  q.f[0] = x;
+  return q;
+}
+
+/* float x4: vaddps & co. MAX/MIN como vmaxps/vminps: si hay NaN o son iguales, src2 */
+#define G2C_QF_OP(name, expr)                         \
+  static inline g2c_q name(g2c_q a, g2c_q b) {        \
+    g2c_q r;                                          \
+    for (int i = 0; i < 4; i++) r.f[i] = (expr);      \
+    return r;                                         \
+  }
+G2C_QF_OP(g2c_qf_add, a.f[i] + b.f[i])
+G2C_QF_OP(g2c_qf_sub, a.f[i] - b.f[i])
+G2C_QF_OP(g2c_qf_mul, a.f[i] * b.f[i])
+G2C_QF_OP(g2c_qf_div, a.f[i] / b.f[i])
+G2C_QF_OP(g2c_qf_max, a.f[i] > b.f[i] ? a.f[i] : b.f[i])
+G2C_QF_OP(g2c_qf_min, a.f[i] < b.f[i] ? a.f[i] : b.f[i])
+
+static inline g2c_q g2c_q_xor(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.d[0] = a.d[0] ^ b.d[0];
+  r.d[1] = a.d[1] ^ b.d[1];
+  return r;
+}
+static inline g2c_q g2c_q_or(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.d[0] = a.d[0] | b.d[0];
+  r.d[1] = a.d[1] | b.d[1];
+  return r;
+}
+static inline g2c_q g2c_q_and(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.d[0] = a.d[0] & b.d[0];
+  r.d[1] = a.d[1] & b.d[1];
+  return r;
+}
+static inline g2c_q g2c_qf_sqrt(g2c_q a) { /* vsqrtps */
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.f[i] = __builtin_sqrtf(a.f[i]);
+  return r;
+}
+static inline g2c_q g2c_qf_itof(g2c_q a) { /* vcvtdq2ps */
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.f[i] = (float)a.sw[i];
+  return r;
+}
+static inline g2c_q g2c_qf_ftoi(g2c_q a) { /* vcvttps2dq: NaN/fuera de rango -> INT32_MIN */
+  g2c_q r;
+  for (int i = 0; i < 4; i++) {
+    float x = a.f[i];
+    r.sw[i] = (x >= -2147483648.0f && x < 2147483648.0f) ? (int32_t)x : INT32_MIN;
+  }
+  return r;
+}
+static inline g2c_q g2c_q_blend(g2c_q a, g2c_q b, unsigned mask) { /* vblendps: bit i -> b */
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.w[i] = ((mask >> i) & 1) ? b.w[i] : a.w[i];
+  return r;
+}
+static inline g2c_q g2c_q_swizzle(g2c_q a, unsigned ctrl) { /* vshufps a, a, ctrl */
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.w[i] = a.w[(ctrl >> (2 * i)) & 3];
+  return r;
+}
+
+/* enteros de 128 bits (MMI de la PS2): rd = op(rs = a, rt = b) */
+static inline g2c_q g2c_pextlb(g2c_q a, g2c_q b) {
+  g2c_q r;
+  for (int i = 0; i < 8; i++) { r.b[2 * i] = b.b[i]; r.b[2 * i + 1] = a.b[i]; }
+  return r;
+}
+static inline g2c_q g2c_pextub(g2c_q a, g2c_q b) {
+  g2c_q r;
+  for (int i = 0; i < 8; i++) { r.b[2 * i] = b.b[i + 8]; r.b[2 * i + 1] = a.b[i + 8]; }
+  return r;
+}
+static inline g2c_q g2c_pextlh(g2c_q a, g2c_q b) {
+  g2c_q r;
+  for (int i = 0; i < 4; i++) { r.h[2 * i] = b.h[i]; r.h[2 * i + 1] = a.h[i]; }
+  return r;
+}
+static inline g2c_q g2c_pextuh(g2c_q a, g2c_q b) {
+  g2c_q r;
+  for (int i = 0; i < 4; i++) { r.h[2 * i] = b.h[i + 4]; r.h[2 * i + 1] = a.h[i + 4]; }
+  return r;
+}
+static inline g2c_q g2c_pextlw(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.w[0] = b.w[0]; r.w[1] = a.w[0]; r.w[2] = b.w[1]; r.w[3] = a.w[1];
+  return r;
+}
+static inline g2c_q g2c_pextuw(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.w[0] = b.w[2]; r.w[1] = a.w[2]; r.w[2] = b.w[3]; r.w[3] = a.w[3];
+  return r;
+}
+static inline g2c_q g2c_pcpyld(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.d[0] = b.d[0]; r.d[1] = a.d[0];
+  return r;
+}
+static inline g2c_q g2c_pcpyud(g2c_q a, g2c_q b) {
+  g2c_q r;
+  r.d[0] = a.d[1]; r.d[1] = b.d[1];
+  return r;
+}
+#define G2C_Q_LANES(name, field, n, expr)            \
+  static inline g2c_q name(g2c_q a, g2c_q b) {       \
+    g2c_q r;                                         \
+    for (int i = 0; i < n; i++) r.field[i] = (expr); \
+    return r;                                        \
+  }
+G2C_Q_LANES(g2c_pceqb, b, 16, a.b[i] == b.b[i] ? 0xff : 0)
+G2C_Q_LANES(g2c_pceqh, h, 8, a.h[i] == b.h[i] ? 0xffff : 0)
+G2C_Q_LANES(g2c_pceqw, w, 4, a.w[i] == b.w[i] ? 0xffffffffu : 0)
+G2C_Q_LANES(g2c_pcgtb, b, 16, a.sb[i] > b.sb[i] ? 0xff : 0)
+G2C_Q_LANES(g2c_pcgth, h, 8, a.sh[i] > b.sh[i] ? 0xffff : 0)
+G2C_Q_LANES(g2c_pcgtw, w, 4, a.sw[i] > b.sw[i] ? 0xffffffffu : 0)
+G2C_Q_LANES(g2c_psubw, w, 4, a.w[i] - b.w[i])
+G2C_Q_LANES(g2c_paddb, b, 16, (uint8_t)(a.b[i] + b.b[i]))
+static inline uint8_t g2c_sat_u8(int16_t x) {
+  return x < 0 ? 0 : (x > 255 ? 255 : (uint8_t)x);
+}
+static inline g2c_q g2c_packuswb(g2c_q a, g2c_q b) { /* vpackuswb a, b */
+  g2c_q r;
+  for (int i = 0; i < 8; i++) { r.b[i] = g2c_sat_u8(a.sh[i]); r.b[i + 8] = g2c_sat_u8(b.sh[i]); }
+  return r;
+}
+/* desplazamientos con inmediato (vpslld & co.): cuentas fuera de rango como en x86 */
+static inline g2c_q g2c_pw_sll(g2c_q a, unsigned n) {
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.w[i] = n > 31 ? 0 : a.w[i] << n;
+  return r;
+}
+static inline g2c_q g2c_pw_srl(g2c_q a, unsigned n) {
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.w[i] = n > 31 ? 0 : a.w[i] >> n;
+  return r;
+}
+static inline g2c_q g2c_pw_sra(g2c_q a, unsigned n) {
+  g2c_q r;
+  for (int i = 0; i < 4; i++) r.sw[i] = a.sw[i] >> (n > 31 ? 31 : n);
+  return r;
+}
+static inline g2c_q g2c_ph_sll(g2c_q a, unsigned n) {
+  g2c_q r;
+  for (int i = 0; i < 8; i++) r.h[i] = n > 15 ? 0 : (uint16_t)(a.h[i] << n);
+  return r;
+}
+static inline g2c_q g2c_ph_srl(g2c_q a, unsigned n) {
+  g2c_q r;
+  for (int i = 0; i < 8; i++) r.h[i] = n > 15 ? 0 : (uint16_t)(a.h[i] >> n);
+  return r;
+}
+static inline g2c_q g2c_psrldq(g2c_q a, unsigned n) { /* bytes hacia abajo */
+  g2c_q r;
+  for (unsigned i = 0; i < 16; i++) r.b[i] = (i + n < 16) ? a.b[i + n] : 0;
+  return r;
+}
+static inline g2c_q g2c_pslldq(g2c_q a, unsigned n) { /* bytes hacia arriba */
+  g2c_q r;
+  for (unsigned i = 0; i < 16; i++) r.b[i] = (i >= n) ? a.b[i - n] : 0;
+  return r;
+}
+static inline g2c_q g2c_pshuflw(g2c_q a, unsigned c) {
+  g2c_q r = a;
+  for (int i = 0; i < 4; i++) r.h[i] = a.h[(c >> (2 * i)) & 3];
+  return r;
+}
+static inline g2c_q g2c_pshufhw(g2c_q a, unsigned c) {
+  g2c_q r = a;
+  for (int i = 0; i < 4; i++) r.h[4 + i] = a.h[4 + ((c >> (2 * i)) & 3)];
+  return r;
 }
 
 /* ---- comparaciones de float con la semántica de comiss + saltos sin signo (x86) ----

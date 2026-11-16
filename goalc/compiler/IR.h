@@ -624,6 +624,7 @@ class IR_AsmFNop : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 };
 
 class IR_AsmFWait : public IR_Asm {
@@ -637,6 +638,7 @@ class IR_AsmFWait : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 };
 
 class IR_GetSymbolValueAsm : public IR_Asm {
@@ -650,6 +652,7 @@ class IR_GetSymbolValueAsm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -684,6 +687,7 @@ class IR_RegSetAsm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -706,6 +710,7 @@ class IR_VFMath3Asm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -752,6 +757,7 @@ class IR_Int128Math3Asm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -776,6 +782,7 @@ class IR_Int128Math2Asm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -796,6 +803,7 @@ class IR_VFMath2Asm : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -814,6 +822,7 @@ class IR_BlendVF : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -836,6 +845,7 @@ class IR_SplatVF : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -854,6 +864,7 @@ class IR_SwizzleVF : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;
@@ -872,6 +883,7 @@ class IR_SqrtVF : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dst = nullptr;

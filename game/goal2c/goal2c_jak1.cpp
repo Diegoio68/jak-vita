@@ -32,7 +32,11 @@
 
 #if defined(__linux__) && defined(__x86_64__)
 #define GOAL2C_MIXED_SUPPORTED 1
+#include <csignal>
+#include <cstdio>
 #include <dlfcn.h>
+#include <ucontext.h>
+#include <unistd.h>
 
 extern "C" {
 void _arg_call_systemv() asm("_arg_call_systemv");
@@ -116,6 +120,56 @@ u32 make_c_entry(void* fn, bool stack_args) {
   return mem.offset;
 }
 
+//! Diagnóstico de fallos en modo mixto: imprime dónde ha fallado (función y desplazamiento
+//! dentro de la librería de goal2c, para addr2line) y la alineación de la pila.
+struct sigaction g_prev_segv;
+void segv_handler(int sig, siginfo_t* info, void* vctx) {
+  auto* uc = (ucontext_t*)vctx;
+  void* rip = (void*)uc->uc_mcontext.gregs[REG_RIP];
+  u64 rsp = (u64)uc->uc_mcontext.gregs[REG_RSP];
+  Dl_info dli{};
+  char buf[512];
+  int n = 0;
+  if (dladdr(rip, &dli) && dli.dli_fname) {
+    n = snprintf(buf, sizeof(buf),
+                 "[goal2c] SIGSEGV en %p (%s + 0x%lx, %s), dirección %p, rsp %% 16 = %lu\n", rip,
+                 dli.dli_fname, (unsigned long)((u8*)rip - (u8*)dli.dli_fbase),
+                 dli.dli_sname ? dli.dli_sname : "?", info->si_addr, (unsigned long)(rsp % 16));
+  } else {
+    n = snprintf(buf, sizeof(buf), "[goal2c] SIGSEGV en %p (fuera de librerías), dirección %p\n",
+                 rip, info->si_addr);
+  }
+  if (n > 0) {
+    (void)!write(2, buf, (size_t)n);
+  }
+  // pila de llamadas por rbp (fiable con la librería compilada con --debug, -O0)
+  u64* fp = (u64*)uc->uc_mcontext.gregs[REG_RBP];
+  for (int depth = 0; depth < 8 && fp; depth++) {
+    void* ret = (void*)fp[1];
+    Dl_info d{};
+    if (!dladdr(ret, &d) || !d.dli_fname || !strstr(d.dli_fname, "goal2c")) {
+      break;  // solo nos interesan los marcos dentro de la librería de goal2c
+    }
+    n = snprintf(buf, sizeof(buf), "[goal2c]   llamado desde %s + 0x%lx\n", d.dli_fname,
+                 (unsigned long)((u8*)ret - (u8*)d.dli_fbase));
+    if (n > 0) {
+      (void)!write(2, buf, (size_t)n);
+    }
+    fp = (u64*)fp[0];
+  }
+  // devolver el control al manejador anterior (o al de por defecto)
+  sigaction(SIGSEGV, &g_prev_segv, nullptr);
+  raise(sig);
+}
+
+void install_segv_handler() {
+  struct sigaction sa{};
+  sa.sa_sigaction = segv_handler;
+  sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGSEGV, &sa, &g_prev_segv);
+}
+
 //! Carga la librería de GOAL2C_LIB si ha cambiado. Sin la variable, desactiva el modo mixto
 //! (los tests arrancan varios runtimes en el mismo proceso, con y sin goal2c).
 void update_library() {
@@ -148,6 +202,7 @@ void update_library() {
   for (auto files = init(&host); *files; files++) {
     g_files[(*files)->obj_name] = *files;
   }
+  install_segv_handler();
   lg::info("[goal2c] modo mixto: {} con {} ficheros traducidos", path, g_files.size());
 }
 

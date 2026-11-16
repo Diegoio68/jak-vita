@@ -47,6 +47,9 @@ class CFunctionWriter {
   std::string ctype(const RegVal* rv) const;
   bool is_gpr(const RegVal* rv) const;
   bool is_float(const RegVal* rv) const;
+  //! Registro de 128 bits (VECTOR_FLOAT o INT_128): tipo g2c_q.
+  bool is_q(const RegVal* rv) const;
+  static std::string var_prefix(const std::string& ctype);
   //! Etiqueta C para un índice de instrucción IR (y la marca como destino de salto).
   std::string label(int ir_idx);
   //! Índice del símbolo en la tabla del fichero: g2c_sym[i] es su dirección GOAL.

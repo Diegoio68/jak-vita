@@ -338,6 +338,37 @@ TEST_F(Goal2CTests, Math) {
   file_util::write_text_file(out_dir / "math_inspect_reference.txt", inspect_out);
 }
 
+//! Junta los mensajes de un test en un texto y quita los saltos de línea finales.
+std::string join_output(const std::vector<std::string>& msgs) {
+  std::string text;
+  for (auto& m : msgs) {
+    text += m;
+  }
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) {
+    text.pop_back();
+  }
+  return text;
+}
+
+TEST_F(Goal2CTests, Vector) {
+  const auto out_dir = file_util::get_jak_project_dir() / "out" / "goal2c" / "jak1";
+  const auto c_file = out_dir / "vector.c";
+  shared->compiler.run_front_end_on_string(fmt::format(
+      "(asm-file \"goal_src/jak1/engine/math/vector.gc\" :goal2c \"{}\")", c_file.string()));
+  ASSERT_TRUE(fs::exists(c_file));
+  // el C debe compilar limpio (también como código de la Vita, sin modo mixto)
+  auto out = run_capture(
+      fmt::format("cc -std=c11 -O2 -Wall -Wextra -Werror -c -I{} {} -o {} 2>&1; echo EXIT=$?",
+                  (file_util::get_jak_project_dir() / "goalc" / "c_backend" / "runtime").string(),
+                  c_file.string(), (out_dir / "vector_check.o").string()));
+  EXPECT_NE(out.find("EXIT=0"), std::string::npos) << out;
+
+  // referencia: los casos con el código x86 de goalc
+  auto ref = join_output(shared->compiler.run_test_from_file("test/goal2c/vector_cases.gc"));
+  EXPECT_NE(ref.find("\"cross\" "), std::string::npos) << ref;
+  file_util::write_text_file(out_dir / "vector_reference.txt", ref);
+}
+
 /*!
  * El juego real en modo mixto: el runtime carga la librería de goal2c (GOAL2C_LIB) y, al
  * enlazar math, sustituye sus funciones x86 por las de C. Los mismos casos se ejecutan desde
@@ -423,4 +454,39 @@ TEST_F(Goal2CMixedTests, MathInGame) {
   EXPECT_EQ(rtrim(inspect_out),
             rtrim(file_util::read_text_file(out_dir / "math_inspect_reference.txt")));
   lg::print("[goal2c] inspect en C:\n{}\n", inspect_out);
+}
+
+TEST_F(Goal2CMixedTests, VectorInGame) {
+  const auto root = file_util::get_jak_project_dir();
+  const auto out_dir = root / "out" / "goal2c" / "jak1";
+  ASSERT_NE(lib_build_output.find("EXIT=0"), std::string::npos) << lib_build_output;
+  ASSERT_TRUE(fs::exists(out_dir / "vector_reference.txt")) << "ejecuta antes Goal2CTests.Vector";
+  EXPECT_EQ(file_util::read_binary_file(out_dir / "vector.c.o"),
+            file_util::read_binary_file(root / "out" / "jak1" / "obj" / "vector.o"));
+  int replaced = goal2c_runtime::replaced_functions("vector");
+  EXPECT_GT(replaced, 0);
+  lg::print("[goal2c] vector: {} funciones en C dentro del juego\n", replaced);
+
+  auto got = join_output(shared->compiler.run_test_from_file("test/goal2c/vector_cases.gc"));
+  auto ref = file_util::read_text_file(out_dir / "vector_reference.txt");
+  while (!ref.empty() && (ref.back() == '\n' || ref.back() == '\r')) {
+    ref.pop_back();
+  }
+  // comparación línea a línea, para que el fallo diga qué caso es
+  std::istringstream gs(got), rs(ref);
+  std::string gl, rl;
+  int line = 0, bad = 0;
+  while (true) {
+    bool g_ok = (bool)std::getline(gs, gl);
+    bool r_ok = (bool)std::getline(rs, rl);
+    if (!g_ok && !r_ok) {
+      break;
+    }
+    line++;
+    if (gl != rl || g_ok != r_ok) {
+      bad++;
+      ADD_FAILURE() << fmt::format("línea {}: goalc='{}' juego-con-goal2c='{}'", line, rl, gl);
+    }
+  }
+  lg::print("[goal2c] vector en el juego: {} líneas comparadas, {} difieren\n", line, bad);
 }

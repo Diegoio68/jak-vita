@@ -109,9 +109,31 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - Runtime: game/goal2c/goal2c_jak1.cpp, enganchado en klink.cpp DESPUÉS del top-level.
   x86->C: objeto función que guarda r13 (pp) y salta a _arg_call_systemv. C->x86:
   _call_goal8_asm_systemv. Solo Linux x86-64.
-- Tests: Goal2CTests.Math (referencia goalc) y Goal2CMixedTests.MathInGame (mismos casos e
-  inspect en el juego con las funciones en C): `build/goalc-test --gtest_filter='Goal2C*'`.
-- Para comprobar que un test sirve: romper a propósito el C generado y ver que falla.
+- Tests: Goal2CTests.{Math,Vector} (referencia goalc) y Goal2CMixedTests.{MathInGame,
+  VectorInGame} (lo mismo en el juego con las funciones en C):
+  `build/goalc-test --gtest_filter='Goal2C*'`. Casos: test/goal2c/math_cases.txt y
+  test/goal2c/vector_cases.gc (salida en bits, se compara texto exacto).
+- OBLIGATORIO además: `test/goal2c/boot_smoke.sh` (juego real sin ventana 45 s con la
+  librería; exige que no falle, que instale funciones y que avance tras cargar el nivel).
+  Los tests de goalc-test NO ejecutan código en la pila x86 nativa; el juego sí.
+- Para comprobar que un test sirve: romper a propósito el C generado (o goal2c_rt.h) y ver
+  que falla.
+- Depurar un fallo en modo mixto: librería con símbolos
+  `build_pc_lib.py --debug --out .../libgoal2c_jak1_dbg.so`; el runtime imprime
+  "[goal2c] SIGSEGV en <lib> + 0xOFF" y la cadena de llamadas; `addr2line -f -e <lib> 0xOFF`.
+- Direcciones: G2C_ADDR suma la dirección GOAL como uintptr_t. En el PC el código GOAL que
+  corre en la pila x86 nativa pasa direcciones "rsp - base" de 64 bits (vectores en pila);
+  truncarlas a 32 bits rompía el juego (y ningún test de goalc-test lo veía).
+
+### Vectores y enteros de 128 bits (VECTOR_FLOAT / INT_128 -> g2c_q)
+- Semántica = la de goalc x86, que sigue la MIPS de la PS2 con src1 = rs, src2 = rt
+  (ojo con los *_swapped de IGenX86). vmaxps/vminps: con NaN o iguales gana src2.
+- FLOAT -> vector es movss: solo el elemento 0, el resto se CONSERVA. GPR -> vector es movq:
+  parte alta a CERO. vector -> GPR: 64 bits bajos.
+- Funciones con parámetros o retorno de 128 bits todavía no se traducen (ABI xmm).
+- Para la Vita: la NaN por defecto de ARM es 0x7fc00000 y la de x86 0xffc00000. Los casos
+  con NaN de vector_cases.gc darán otro signo en ARM; la PS2 no tiene NaN, así que el juego
+  no debería depender de ello. Comparar en la Vita ignorando el signo de las NaN.
 
 ### Benchmarks
 - Siempre varias ejecuciones (vita/bench: 7, alternando variantes) y reportar la MEDIANA
@@ -129,6 +151,9 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   y retornos cuyo tipo GOAL lo garantice (float, punteros, basic) y reconstruya el valor
   exacto en el llamado, validada contra la versión u64.
   Logs: build-vita/bench_fase1_sin_llamadas.txt y build-vita/bench.txt (no versionados).
+  Medianas (7 ejecuciones, Vita real): total +18 %; rango dentro de un build < 2 %, pero
+  entre builds el mismo C varía hasta ±40 % por colocación del código (lerp-clamp u32 60 ->
+  87 ns). Próximo benchmark: compilar con -falign-functions=64 para reducirlo.
 
 ## Fases
 0. Fork compila en PC; extractor corre con el ISO de Jak 1. Hello world vitaGL en Vita.

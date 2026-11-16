@@ -87,9 +87,8 @@ std::string CFunctionWriter::ctype(const RegVal* rv) const {
     case RegClass::FLOAT:
       return "float";
     case RegClass::INT_128:
-      unsupported("registro INT_128 (todavía no soportado)");
     case RegClass::VECTOR_FLOAT:
-      unsupported("registro VECTOR_FLOAT (todavía no soportado)");
+      return "g2c_q";
     default:
       unsupported("clase de registro inválida");
   }
@@ -97,7 +96,12 @@ std::string CFunctionWriter::ctype(const RegVal* rv) const {
 
 std::string CFunctionWriter::var(const RegVal* rv) {
   if (rv->rlet_constraint().has_value()) {
-    unsupported("variable rlet con registro fijo (ensamblador en línea)");
+    // En C una variable rlet es una variable más: el registro concreto da igual. Salvo los
+    // registros con significado propio en GOAL, cuyo valor no existe en el C.
+    auto reg = *rv->rlet_constraint();
+    if (reg == emitter::RSP || reg == emitter::R13 || reg == emitter::R14 || reg == emitter::R15) {
+      unsupported("rlet sobre rsp/r13(pp)/r14(st)/r15(base): " + rv->print());
+    }
   }
   if (rv->forced_on_stack()) {
     unsupported("variable en la pila (se toma su dirección)");
@@ -110,7 +114,22 @@ std::string CFunctionWriter::var(const RegVal* rv) {
   } else {
     ASSERT(it->second == t);
   }
-  return (t == "float" ? "f" : "r") + std::to_string(id);
+  return var_prefix(t) + std::to_string(id);
+}
+
+std::string CFunctionWriter::var_prefix(const std::string& ctype) {
+  if (ctype == "float") {
+    return "f";
+  }
+  if (ctype == "g2c_q") {
+    return "q";
+  }
+  return "r";
+}
+
+bool CFunctionWriter::is_q(const RegVal* rv) const {
+  auto c = rv->ireg().reg_class;
+  return c == RegClass::VECTOR_FLOAT || c == RegClass::INT_128;
 }
 
 std::string CFunctionWriter::label(int ir_idx) {
@@ -165,12 +184,34 @@ void CFunctionWriter::reg_set(const RegVal* dest, const RegVal* src) {
   } else if (is_gpr(dest) && is_float(src)) {
     // movd r32, xmm + movsx: goalc extiende el signo (como mfc1 en la PS2)
     line(fmt::format("{} = (g2c_gpr)(g2c_sgpr)(int32_t)g2c_f_to_bits({});", d, s));
+  } else if (is_q(dest) && is_q(src)) {
+    line(fmt::format("{} = {};", d, s));
+  } else if (is_float(dest) && is_q(src)) {
+    // movss reg, reg: el elemento 0
+    line(fmt::format("{} = {}.f[0];", d, s));
+  } else if (is_q(dest) && is_float(src)) {
+    // movss reg, reg: solo el elemento 0, el resto de dest se conserva
+    line(fmt::format("{} = g2c_q_set_f0({}, {});", d, d, s));
+  } else if (is_q(dest) && is_gpr(src)) {
+    // movq xmm, r64: 64 bits bajos, la parte alta a cero
+    line(fmt::format("{} = g2c_q_from_gpr({});", d, s));
+  } else if (is_gpr(dest) && is_q(src)) {
+    // movq r64, xmm: 64 bits bajos
+    line(fmt::format("{} = (g2c_gpr){}.d[0];", d, s));
   } else {
     unsupported("reg_set entre clases no soportadas");
   }
 }
 
 std::string CFunctionWriter::finish(const std::string& c_name) {
+  for (auto* p : params) {
+    if (!is_gpr(p)) {
+      unsupported("parámetro de 128 bits (ABI xmm, todavía no soportada)");
+    }
+  }
+  if (return_reg && !is_gpr(return_reg)) {
+    unsupported("retorno de 128 bits (ABI xmm, todavía no soportada)");
+  }
   std::string out;
   // static: cada fichero solo exporta su tabla de funciones y su función de enlace
   out += fmt::format("static g2c_gpr {}(", c_name);
@@ -184,7 +225,7 @@ std::string CFunctionWriter::finish(const std::string& c_name) {
 
   // declaraciones (todas al principio: los goto no pueden saltarse inicializaciones)
   for (auto& [id, t] : m_vars) {
-    out += fmt::format("  {} {}{} = 0;\n", t, t == "float" ? "f" : "r", id);
+    out += fmt::format("  {} {}{} = {};\n", t, var_prefix(t), id, t == "g2c_q" ? "{{0}}" : "0");
   }
   for (size_t i = 0; i < params.size(); i++) {
     out += fmt::format("  {} = a{};\n", var(params[i]), i);
@@ -642,6 +683,11 @@ void IR_IntToFloat::do_codegen_c(CFunctionWriter& w) {
 }
 
 void IR_StaticVarLoad::do_codegen_c(CFunctionWriter& w) {
+  if (w.is_q(m_dest)) {
+    // goalc x86: loadvf_rip enlazado al comienzo del estático (16 bytes)
+    w.line(fmt::format("{} = g2c_ld_q({});", w.var(m_dest), w.static_addr(m_src)));
+    return;
+  }
   auto* sf = dynamic_cast<const StaticFloat*>(m_src);
   if (!sf || !w.is_float(m_dest)) {
     unsupported("carga estática que no es un float");
@@ -680,6 +726,8 @@ void IR_LoadConstOffset::do_codegen_c(CFunctionWriter& w) {
   } else if (w.is_float(m_dest) && m_info.size == 4 && !m_info.sign_extend &&
              m_info.reg == RegClass::FLOAT) {
     w.line(fmt::format("{} = g2c_ld_f32({});", d, addr));
+  } else if (w.is_q(m_dest) && m_info.size == 16 && !m_info.sign_extend) {
+    w.line(fmt::format("{} = g2c_ld_q({});", d, addr));
   } else {
     unsupported("load a registro no soportado");
   }
@@ -707,6 +755,8 @@ void IR_StoreConstOffset::do_codegen_c(CFunctionWriter& w) {
     }
   } else if (w.is_float(m_value) && m_size == 4) {
     w.line(fmt::format("g2c_st_f32({}, {});", addr, v));
+  } else if (w.is_q(m_value) && m_size == 16) {
+    w.line(fmt::format("g2c_st_q({}, {});", addr, v));
   } else {
     unsupported("store desde registro no soportado");
   }
@@ -738,4 +788,237 @@ void IR_FunctionCall::do_codegen_c(CFunctionWriter& w) {
     args += ", " + w.var(a);
   }
   w.line(fmt::format("{} = G2C_CALL{}({});", w.var(m_ret), m_args.size(), args));
+}
+
+///////////////////////////
+// vectores y enteros de 128 bits (ensamblador en línea de GOAL: .add.vf, .pextlw, ...)
+///////////////////////////
+
+void IR_RegSetAsm::do_codegen_c(CFunctionWriter& w) {
+  w.reg_set(m_dst, m_src);
+}
+
+void IR_AsmFNop::do_codegen_c(CFunctionWriter& w) {
+  (void)w;
+}
+
+void IR_AsmFWait::do_codegen_c(CFunctionWriter& w) {
+  (void)w;
+}
+
+void IR_GetSymbolValueAsm::do_codegen_c(CFunctionWriter& w) {
+  if (!w.is_gpr(m_dest)) {
+    unsupported("valor de símbolo (asm) a registro no GPR");
+  }
+  auto sym = w.symbol(m_sym_name);
+  if (m_sext) {
+    w.line(fmt::format("{} = (g2c_gpr)(g2c_sgpr)g2c_ld_s32({});", w.var(m_dest), sym));
+  } else {
+    w.line(fmt::format("{} = (g2c_gpr)g2c_ld_u32({});", w.var(m_dest), sym));
+  }
+}
+
+namespace {
+void need_q(CFunctionWriter& w, const RegVal* r, const char* what) {
+  if (!w.is_q(r)) {
+    unsupported(std::string(what) + ": operando que no es de 128 bits");
+  }
+}
+}  // namespace
+
+void IR_VFMath3Asm::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "vf3");
+  need_q(w, m_src1, "vf3");
+  need_q(w, m_src2, "vf3");
+  const char* fn = nullptr;
+  switch (m_kind) {
+    case Kind::XOR:
+      fn = "g2c_q_xor";
+      break;
+    case Kind::SUB:
+      fn = "g2c_qf_sub";
+      break;
+    case Kind::ADD:
+      fn = "g2c_qf_add";
+      break;
+    case Kind::MUL:
+      fn = "g2c_qf_mul";
+      break;
+    case Kind::MAX:
+      fn = "g2c_qf_max";
+      break;
+    case Kind::MIN:
+      fn = "g2c_qf_min";
+      break;
+    case Kind::DIV:
+      fn = "g2c_qf_div";
+      break;
+    default:
+      unsupported("operación vf desconocida");
+  }
+  w.line(fmt::format("{} = {}({}, {});", w.var(m_dst), fn, w.var(m_src1), w.var(m_src2)));
+}
+
+void IR_VFMath2Asm::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "vf2");
+  need_q(w, m_src, "vf2");
+  const char* fn = m_kind == Kind::ITOF ? "g2c_qf_itof" : "g2c_qf_ftoi";
+  w.line(fmt::format("{} = {}({});", w.var(m_dst), fn, w.var(m_src)));
+}
+
+void IR_BlendVF::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "blend");
+  need_q(w, m_src1, "blend");
+  need_q(w, m_src2, "blend");
+  w.line(fmt::format("{} = g2c_q_blend({}, {}, 0x{:x}u);", w.var(m_dst), w.var(m_src1),
+                     w.var(m_src2), (unsigned)m_mask));
+}
+
+void IR_SplatVF::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "splat");
+  need_q(w, m_src, "splat");
+  unsigned ctrl;
+  switch (m_element) {
+    case emitter::Register::VF_ELEMENT::X:
+      ctrl = 0b00000000;
+      break;
+    case emitter::Register::VF_ELEMENT::Y:
+      ctrl = 0b01010101;
+      break;
+    case emitter::Register::VF_ELEMENT::Z:
+      ctrl = 0b10101010;
+      break;
+    case emitter::Register::VF_ELEMENT::W:
+      ctrl = 0b11111111;
+      break;
+    default:
+      unsupported("splat sin elemento");
+  }
+  w.line(fmt::format("{} = g2c_q_swizzle({}, 0x{:x}u);", w.var(m_dst), w.var(m_src), ctrl));
+}
+
+void IR_SwizzleVF::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "swizzle");
+  need_q(w, m_src, "swizzle");
+  w.line(fmt::format("{} = g2c_q_swizzle({}, 0x{:x}u);", w.var(m_dst), w.var(m_src),
+                     (unsigned)m_controlBytes));
+}
+
+void IR_SqrtVF::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "sqrt");
+  need_q(w, m_src, "sqrt");
+  w.line(fmt::format("{} = g2c_qf_sqrt({});", w.var(m_dst), w.var(m_src)));
+}
+
+void IR_Int128Math3Asm::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "int128");
+  need_q(w, m_src1, "int128");
+  need_q(w, m_src2, "int128");
+  const char* fn = nullptr;
+  switch (m_kind) {
+    case Kind::PEXTUB:
+      fn = "g2c_pextub";
+      break;
+    case Kind::PEXTUH:
+      fn = "g2c_pextuh";
+      break;
+    case Kind::PEXTUW:
+      fn = "g2c_pextuw";
+      break;
+    case Kind::PEXTLB:
+      fn = "g2c_pextlb";
+      break;
+    case Kind::PEXTLH:
+      fn = "g2c_pextlh";
+      break;
+    case Kind::PEXTLW:
+      fn = "g2c_pextlw";
+      break;
+    case Kind::PCPYUD:
+      fn = "g2c_pcpyud";
+      break;
+    case Kind::PCPYLD:
+      fn = "g2c_pcpyld";
+      break;
+    case Kind::PSUBW:
+      fn = "g2c_psubw";
+      break;
+    case Kind::PCEQB:
+      fn = "g2c_pceqb";
+      break;
+    case Kind::PCEQH:
+      fn = "g2c_pceqh";
+      break;
+    case Kind::PCEQW:
+      fn = "g2c_pceqw";
+      break;
+    case Kind::PCGTB:
+      fn = "g2c_pcgtb";
+      break;
+    case Kind::PCGTH:
+      fn = "g2c_pcgth";
+      break;
+    case Kind::PCGTW:
+      fn = "g2c_pcgtw";
+      break;
+    case Kind::POR:
+      fn = "g2c_q_or";
+      break;
+    case Kind::PXOR:
+      fn = "g2c_q_xor";
+      break;
+    case Kind::PAND:
+      fn = "g2c_q_and";
+      break;
+    case Kind::PACKUSWB:
+      fn = "g2c_packuswb";
+      break;
+    case Kind::PADDB:
+      fn = "g2c_paddb";
+      break;
+    default:
+      unsupported("operación int128 desconocida");
+  }
+  w.line(fmt::format("{} = {}({}, {});", w.var(m_dst), fn, w.var(m_src1), w.var(m_src2)));
+}
+
+void IR_Int128Math2Asm::do_codegen_c(CFunctionWriter& w) {
+  need_q(w, m_dst, "int128");
+  need_q(w, m_src, "int128");
+  if (!m_imm.has_value()) {
+    unsupported("int128 sin inmediato");
+  }
+  const char* fn = nullptr;
+  switch (m_kind) {
+    case Kind::PW_SLL:
+      fn = "g2c_pw_sll";
+      break;
+    case Kind::PW_SRL:
+      fn = "g2c_pw_srl";
+      break;
+    case Kind::PH_SLL:
+      fn = "g2c_ph_sll";
+      break;
+    case Kind::PH_SRL:
+      fn = "g2c_ph_srl";
+      break;
+    case Kind::PW_SRA:
+      fn = "g2c_pw_sra";
+      break;
+    case Kind::VPSRLDQ:
+      fn = "g2c_psrldq";
+      break;
+    case Kind::VPSLLDQ:
+      fn = "g2c_pslldq";
+      break;
+    case Kind::VPSHUFLW:
+      fn = "g2c_pshuflw";
+      break;
+    case Kind::VPSHUFHW:
+      fn = "g2c_pshufhw";
+      break;
+    default:
+      unsupported("operación int128 desconocida");
+  }
+  w.line(fmt::format("{} = {}({}, {}u);", w.var(m_dst), fn, w.var(m_src), (unsigned)*m_imm));
 }
