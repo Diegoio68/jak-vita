@@ -14,6 +14,17 @@ Después Jak 2 y Jak 3.
 - Ubuntu en WSL2 (Windows). Trabajar siempre en ~/proyectos/jak-vita, nunca en /mnt/c.
 - VitaSDK en /usr/local/vitasdk (gcc 15), paquetes con `vdpm install <pkg>`.
   Instalados: vitaGL, vitaShaRK, libmathneon, SceShaccCgExt, taihen, zlib.
+- Build de PC: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
+  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
+  -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld && cmake --build build -j 12`.
+- Las herramientas de upstream buscan una carpeta llamada "jak-project"; la nuestra se
+  llama jak-vita, así que extractor/goalc/gk necesitan `--proj-path ~/proyectos/jak-vita`
+  (los `task ...` de upstream no lo pasan y fallan con "Could not setup project path").
+- El ISO va en iso_data/ (raíz), NO en iso_data/jak1/: el extractor hace remove_all de
+  iso_data/jak1/ y lo borraría. Extraer:
+  `./build/decompiler/extractor --proj-path "$PWD" -e -d -c "iso_data/<iso>"`, luego
+  `git restore iso_data/jak1/.gitignore`. Arrancar:
+  `./build/game/gk --proj-path "$PWD" -v --game jak1 -- -boot -fakeiso -debug`.
 - Vita3K está instalado en Windows: copiar el .vpk a /mnt/c/Users/<usuario>/jakvita/.
 - Vita real con HENkaku, VitaShell, vitacompanion (FTP 1337, comandos 1338), ShaRKF00D.
 
