@@ -7,6 +7,12 @@
  *
  * Entrada (stdin), una llamada por línea:  <nombre-goal> <arg0-hex> <arg1-hex> ...
  *   (cada argumento es el valor de 64 bits del registro GOAL, en hexadecimal)
+ * Antes de leer casos hace lo que haría el código top-level de GOAL al cargar el fichero:
+ * crea un objeto función por cada entrada de la tabla (con el puntero nativo en su zona de
+ * código, convención G2C_NATIVE_FN) y lo guarda en el valor del símbolo con su nombre.
+ * También define "pc-rand" con una secuencia determinista (contador * 7919), la misma que
+ * instala test/goalc/test_goal2c.cpp en el runtime de referencia.
+ *
  * Salida (stdout):
  *   primero "SYM <nombre> <direccion-hex>" para #t y #f,
  *   luego, por cada llamada, "RET <valor-hex>" (o "ERR <motivo>").
@@ -50,6 +56,39 @@ uint32_t g2c_rt_symbol(const char* name) {
   return 0x1000u + 16u * (uint32_t)sym_count++;
 }
 
+/* asignador lineal para objetos función y estáticos falsos (a partir de 64 KB) */
+static uint32_t g_bump = 0x10000u;
+static uint32_t goal_alloc(uint32_t size) {
+  uint32_t addr = (g_bump + 15u) & ~15u;
+  g_bump = addr + size;
+  if (g_bump > MEM_SIZE) {
+    fprintf(stderr, "memoria GOAL falsa agotada\n");
+    exit(1);
+  }
+  return addr;
+}
+
+/* estáticos: el arnés no tiene los datos reales del objeto .go; devuelve direcciones
+   únicas (sirve para funciones que solo pasan la dirección, no para leer el contenido) */
+uint32_t g2c_rt_static(const char* obj_name, int idx) {
+  (void)obj_name;
+  (void)idx;
+  return goal_alloc(64);
+}
+
+/* registra una función nativa como objeto función GOAL en el valor del símbolo name */
+static void define_function(const char* name, void* native) {
+  uint32_t fobj = goal_alloc(16);
+  memcpy(G2C_ADDR(fobj), &native, sizeof(native));
+  g2c_st_u32(g2c_rt_symbol(name), fobj);
+}
+
+static g2c_gpr g_pc_rand_counter;
+static g2c_gpr fake_pc_rand(void) {
+  g_pc_rand_counter++;
+  return g_pc_rand_counter * 7919u;
+}
+
 typedef g2c_gpr (*f0)(void);
 typedef g2c_gpr (*f1)(g2c_gpr);
 typedef g2c_gpr (*f2)(g2c_gpr, g2c_gpr);
@@ -81,6 +120,10 @@ int main(void) {
   uint32_t sym_f = g2c_rt_symbol("#f");
   uint32_t sym_t = g2c_rt_symbol("#t");
   G2C_LINK();
+  for (const g2c_func_entry* it = G2C_TABLE; it->name; it++) {
+    define_function(it->name, it->fn);
+  }
+  define_function("pc-rand", (void*)fake_pc_rand);
   printf("SYM #f %" PRIx32 "\nSYM #t %" PRIx32 "\n", sym_f, sym_t);
 
   char line[1024];

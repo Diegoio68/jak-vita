@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <vitaGL.h>
 
 #include "math_expected.h"
@@ -37,18 +38,63 @@ void g2c_math_link(void);
 void g2c_math_link32(void);
 
 uint8_t* g2c_mem = nullptr;
+}
 
-// Memoria GOAL falsa con los símbolos en 0x1000 + 16*i (como el arnés de PC).
-static char g_sym_names[64][64];
-static int g_sym_count = 0;
-uint32_t g2c_rt_symbol(const char* name) {
-  for (int i = 0; i < g_sym_count; i++) {
-    if (strcmp(g_sym_names[i], name) == 0) {
-      return 0x1000u + 16u * (uint32_t)i;
+namespace {
+
+// Memoria GOAL falsa. Cada variante (u64/u32) tiene su propio espacio de símbolos: si
+// compartieran, rand-vu-int-range de una llamaría al rand-vu de la otra (ABI distinta).
+struct SymSpace {
+  uint32_t base;
+  char names[64][64];
+  int count;
+};
+SymSpace g_syms64{0x1000u, {}, 0};
+SymSpace g_syms32{0x2000u, {}, 0};
+
+uint32_t sym_lookup(SymSpace& s, const char* name) {
+  for (int i = 0; i < s.count; i++) {
+    if (strcmp(s.names[i], name) == 0) {
+      return s.base + 16u * (uint32_t)i;
     }
   }
-  strncpy(g_sym_names[g_sym_count], name, 63);
-  return 0x1000u + 16u * (uint32_t)g_sym_count++;
+  strncpy(s.names[s.count], name, 63);
+  return s.base + 16u * (uint32_t)s.count++;
+}
+
+uint32_t g_bump = 0x10000u;
+uint32_t goal_alloc(uint32_t size) {
+  uint32_t addr = (g_bump + 15u) & ~15u;
+  g_bump = addr + size;
+  return addr;
+}
+
+// pc-rand determinista: la misma secuencia (contador * 7919) que usa la referencia de goalc
+uint64_t g_pc_rand_counter = 0;
+uint64_t fake_pc_rand64() {
+  g_pc_rand_counter++;
+  return g_pc_rand_counter * 7919u;
+}
+uint32_t fake_pc_rand32() {
+  g_pc_rand_counter++;
+  return (uint32_t)(g_pc_rand_counter * 7919u);
+}
+
+}  // namespace
+
+extern "C" {
+uint32_t g2c_rt_symbol(const char* name) {
+  return sym_lookup(g_syms64, name);
+}
+uint32_t g2c_rt_symbol32(const char* name) {
+  return sym_lookup(g_syms32, name);
+}
+// el bench no tiene los datos de los objetos .go: direcciones únicas sin contenido
+uint32_t g2c_rt_static(const char*, int) {
+  return goal_alloc(64);
+}
+uint32_t g2c_rt_static32(const char*, int) {
+  return goal_alloc(64);
 }
 }
 
@@ -57,6 +103,22 @@ namespace {
 constexpr int kMemSize = 1 << 20;
 constexpr int kIters = 1000000;
 constexpr int kRepeats = 3;
+
+// Lo que haría el código top-level de GOAL al cargar el fichero: objeto función con el
+// puntero nativo en su zona de código (convención G2C_NATIVE_FN) y guardado en su símbolo.
+void define_function(SymSpace& space, const char* name, void* native) {
+  uint32_t fobj = goal_alloc(16);
+  memcpy(g2c_mem + fobj, &native, sizeof(native));
+  uint32_t value = fobj;
+  memcpy(g2c_mem + sym_lookup(space, name), &value, 4);
+}
+
+void define_all(SymSpace& space, const g2c_func_entry* table, void* pc_rand) {
+  for (auto* e = table; e->name; e++) {
+    define_function(space, e->name, e->fn);
+  }
+  define_function(space, "pc-rand", pc_rand);
+}
 
 const g2c_func_entry* find(const g2c_func_entry* table, const char* name) {
   for (auto* e = table; e->name; e++) {
@@ -89,8 +151,9 @@ R call(const g2c_func_entry* e, const R* a) {
 
 // Compara un resultado con la referencia de goalc. is32: la variante devuelve 32 bits.
 bool check(const char* kind, uint64_t raw, uint64_t expected, bool is32) {
-  const uint64_t sym_t = g2c_rt_symbol("#t");
-  const uint64_t sym_f = g2c_rt_symbol("#f");
+  SymSpace& space = is32 ? g_syms32 : g_syms64;
+  const uint64_t sym_t = sym_lookup(space, "#t");
+  const uint64_t sym_f = sym_lookup(space, "#f");
   if (strcmp(kind, "float") == 0) {
     return (raw & 0xffffffffu) == expected;
   }
@@ -106,6 +169,7 @@ bool check(const char* kind, uint64_t raw, uint64_t expected, bool is32) {
 template <typename R>
 int check_all(const g2c_func_entry* table, bool is32, const char* label) {
   int bad = 0;
+  g_pc_rand_counter = 0;  // la referencia empieza la secuencia de pc-rand desde 0
   const int n = sizeof(g2c_math_expected) / sizeof(g2c_math_expected[0]);
   for (int i = 0; i < n; i++) {
     auto& c = g2c_math_expected[i];
@@ -216,17 +280,24 @@ int main() {
                          SCE_GXM_MULTISAMPLE_NONE);
 
   g2c_mem = new uint8_t[kMemSize]();
-  g2c_rt_symbol("#f");
-  g2c_rt_symbol("#t");
+  for (SymSpace* sp : {&g_syms64, &g_syms32}) {
+    sym_lookup(*sp, "#f");
+    sym_lookup(*sp, "#t");
+  }
   g2c_math_link();
   g2c_math_link32();
+  define_all(g_syms64, g2c_math_funcs, (void*)fake_pc_rand64);
+  define_all(g_syms32, g2c_math_funcs32, (void*)fake_pc_rand32);
 
   // 1) corrección en ARM
   int bad64 = check_all<uint64_t>(g2c_math_funcs, false, "u64");
   int bad32 = check_all<uint32_t>(g2c_math_funcs32, true, "u32");
 
   // 2) rendimiento
-  const char* fns[] = {"truncate", "log2", "seekl", "seek", "lerp", "lerp-clamp", "lerp-scale"};
+  // rand-vu: 1 llamada a pc-rand; rand-vu-int-range: cadena de 3 llamadas GOAL->GOAL->GOAL->C
+  const char* fns[] = {"truncate",   "log2",    "seekl",
+                       "seek",       "lerp",    "lerp-clamp",
+                       "lerp-scale", "rand-vu", "rand-vu-int-range"};
   log("benchmark: %d llamadas x %d repeticiones (mejor tiempo), ns por llamada", kIters, kRepeats);
   log("%-12s %8s %8s %7s", "funcion", "u64", "u32", "u64/u32");
   double sum64 = 0, sum32 = 0;

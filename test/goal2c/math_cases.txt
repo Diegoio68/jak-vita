@@ -71,3 +71,23 @@ rand-vu-init float f:0.5
 rand-vu-nostep float
 rand-vu-init float f:-3.75
 rand-vu-nostep float
+
+# llamadas entre funciones GOAL: rand-vu llama a pc-rand (determinista en el test) y el resto
+# llama a rand-vu a través del valor de su símbolo
+rand-vu-init float f:1.418091058731079
+rand-vu float
+rand-vu float
+rand-vu-nostep float
+rand-vu float
+rand-vu-float-range float f:-2 f:3
+rand-vu-float-range float f:10 f:20
+rand-vu-percent? bool f:0.5
+rand-vu-percent? bool f:0.5
+rand-vu-percent? bool f:0.9
+rand-vu-percent? bool f:0.1
+rand-vu-int-range int i:-5 i:5
+rand-vu-int-range int i:5 i:-5
+rand-vu-int-range int i:0 i:100
+rand-vu-int-count int i:10
+rand-vu-int-count int i:10
+rand-vu-int-count int i:1000

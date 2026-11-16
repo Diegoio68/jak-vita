@@ -19,6 +19,7 @@
 class FileEnv;
 class FunctionEnv;
 class RegVal;
+class StaticObject;
 struct Label;
 
 namespace goal2c {
@@ -29,7 +30,14 @@ namespace goal2c {
  */
 class CFunctionWriter {
  public:
-  CFunctionWriter(const FunctionEnv* env, std::map<std::string, int>* file_symbols);
+  //! Estado compartido por todas las funciones de un fichero.
+  struct FileState {
+    std::map<std::string, int> symbols;             // nombre -> índice en g2c_sym
+    std::map<const StaticObject*, int> static_idx;  // objeto estático -> índice en el fichero
+    std::set<int> used_statics;                     // estáticos referenciados por el C
+  };
+
+  CFunctionWriter(const FunctionEnv* env, FileState* file);
 
   //! Nombre de la variable C de un registro virtual (y la declara).
   std::string var(const RegVal* rv);
@@ -41,6 +49,8 @@ class CFunctionWriter {
   std::string label(int ir_idx);
   //! Índice del símbolo en la tabla del fichero: g2c_sym[i] es su dirección GOAL.
   std::string symbol(const std::string& name);
+  //! Dirección GOAL de un objeto estático del fichero (string, estructura...).
+  std::string static_addr(const StaticObject* obj);
   //! Empieza la traducción de la instrucción IR ir_idx.
   void begin_ir(int ir_idx);
   //! Añade una línea de C al cuerpo.
@@ -60,7 +70,7 @@ class CFunctionWriter {
 
  private:
   const FunctionEnv* m_env;
-  std::map<std::string, int>* m_file_symbols;
+  FileState* m_file;
   std::map<int, std::string> m_vars;  // ireg id -> tipo C
   std::set<int> m_label_targets;
   // cuerpo: (índice IR, texto)

@@ -41,6 +41,17 @@ extern uint8_t* g2c_mem;
 /* Dirección GOAL de un símbolo por nombre. La define el runtime (o el arnés). */
 uint32_t g2c_rt_symbol(const char* name);
 
+/* Dirección GOAL del objeto estático número idx (orden de FileEnv::statics) del fichero
+   obj_name, apuntando a su comienzo. La define el runtime (o el arnés). */
+uint32_t g2c_rt_static(const char* obj_name, int idx);
+
+/* Puntero a la función C nativa de un objeto función de GOAL. Convención goal2c: la zona
+   de código del objeto función (la dirección a la que apunta el valor GOAL) guarda el
+   puntero nativo. El runtime de PC puede redefinirlo para el modo mixto x86 + C. */
+#ifndef G2C_NATIVE_FN
+#define G2C_NATIVE_FN(goal_addr) (*(void**)G2C_ADDR(goal_addr))
+#endif
+
 /* Entrada de la tabla de funciones de un fichero generado. */
 typedef struct {
   const char* name;  /* nombre GOAL (p. ej. "lerp-clamp") */

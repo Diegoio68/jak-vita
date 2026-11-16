@@ -67,7 +67,11 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   Solo pedir a Diego que pruebe en la Vita lo que ya pasó en Vita3K (o explicar por qué
   algo no se puede comprobar en el emulador).
 - Ruta de Vita3K.exe: variable VITA3K_EXE o fichero vita/tools/.vita3k_path (no versionado).
-- Despliegue a la Vita física: `VITA_IP=<ip> vita/tools/deploy.sh` (ver --help).
+- Despliegue a la Vita física: POR USB con VitaShell (vitacompanion no le funciona a Diego).
+  `APP=<app> vita/tools/deploy.sh --usb` copia el .vpk a C:\Users\<usuario>\jakvita\ e
+  imprime los pasos (USB de VitaShell, instalar el .vpk, lanzar, copiar el log de vuelta a
+  build-vita/). Al pedir una prueba, dar esos pasos. Los modos FTP de deploy.sh quedan
+  como alternativa.
 - Logs en la Vita: ux0:data/jakvita/log.txt además de stdout.
 - Probar el backend C primero en PC (Linux) antes de llevarlo a la Vita.
 - Varias apps de Vita, elegidas con APP= en emu_test.sh y deploy.sh:
@@ -81,6 +85,11 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - Semántica: replicar EXACTAMENTE la de do_codegen_x86 de cada IR (la referencia es goalc
   x86). Ojo: float->GPR extiende el signo; IMUL_32/DIV_32 extienden el signo; desplazamientos
   enmascarados a 6 bits; comparaciones float con semántica de comiss.
+- Llamadas entre funciones: el objeto función de GOAL guarda en su zona de código el
+  puntero a la función C nativa; el C llama con `G2C_NATIVE_FN(dir)` y la aridad del
+  llamante (seguro con AAPCS/SysV, que limpian la pila en el llamante). Los datos estáticos
+  (strings...) siguen en el .go; el C obtiene su dirección al enlazar con
+  g2c_rt_static(fichero, índice en FileEnv::statics()).
 - Validación en PC (obligatoria antes de llevar nada a la Vita):
   `ninja -C build goalc-test && build/goalc-test --gtest_filter='Goal2CTests.*'`
   Transpila math.gc, compila el C con cc + test/goal2c/harness.c y compara bit a bit con

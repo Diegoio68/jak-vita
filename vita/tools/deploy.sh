@@ -6,6 +6,8 @@
 #   VITA_IP=192.168.1.50 vita/tools/deploy.sh --eboot    # solo reemplaza eboot.bin (rápido, ya instalado)
 #   VITA_IP=192.168.1.50 vita/tools/deploy.sh --log      # descarga el log de la app (log.txt o bench.txt)
 #   vita/tools/deploy.sh --vita3k                        # copia el .vpk a C:\Users\<usuario>\jakvita\
+#   vita/tools/deploy.sh --usb                           # igual que --vita3k + pasos para instalar
+#                                                        # por USB con VitaShell (sin vitacompanion)
 #
 # Variables:
 #   VITA_IP        IP de la Vita (obligatoria salvo --vita3k)
@@ -82,7 +84,7 @@ case "$mode" in
     echo ">> guardado en $out"
     cat "$out"
     ;;
-  --vita3k)
+  --vita3k|--usb)
     [[ -f "$VPK" ]] || die "no existe $VPK"
     if [[ -z "${WIN_USER:-}" ]]; then
       WIN_USER="$(cmd.exe /c 'echo %USERNAME%' 2>/dev/null | tr -d '\r')" || true
@@ -92,9 +94,25 @@ case "$mode" in
     mkdir -p "$dst"
     cp "$VPK" "$dst/"
     echo ">> copiado a $dst/$VPK_NAME"
+    if [[ "$mode" == "--usb" ]]; then
+      cat <<USB
+
+Pasos por USB (VitaShell):
+  1. En la Vita abre VitaShell y pulsa SELECT -> conexión USB (ux0:). Conecta el cable.
+     En Windows aparece una unidad nueva (la raíz de esa unidad es ux0:).
+  2. Copia C:\\Users\\$WIN_USER\\jakvita\\$VPK_NAME a la raíz de esa unidad.
+  3. En la Vita pulsa O para cerrar la conexión USB.
+  4. En VitaShell ve a ux0:, sitúate en $VPK_NAME y pulsa X -> instalar (si pregunta,
+     acepta sobrescribir/actualizar).
+  5. Lanza la app ($TITLE_ID) desde la pantalla de inicio.
+  6. Al terminar, vuelve a VitaShell, SELECT -> USB, y copia de la unidad
+     data\\jakvita\\$APP_LOG a:
+       \\\\wsl\$\\Ubuntu\\home\\diego\\proyectos\\jak-project\\build-vita\\$APP_LOG
+USB
+    fi
     ;;
   -h|--help)
-    sed -n '2,17p' "$0"
+    sed -n '2,19p' "$0"
     ;;
   *)
     die "modo desconocido: $mode (usa --help)"

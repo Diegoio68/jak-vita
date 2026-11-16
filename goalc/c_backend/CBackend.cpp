@@ -69,8 +69,8 @@ std::string mangle(const std::string& goal_name) {
 // CFunctionWriter
 ///////////////////////////
 
-CFunctionWriter::CFunctionWriter(const FunctionEnv* env, std::map<std::string, int>* file_symbols)
-    : m_env(env), m_file_symbols(file_symbols) {}
+CFunctionWriter::CFunctionWriter(const FunctionEnv* env, FileState* file)
+    : m_env(env), m_file(file) {}
 
 bool CFunctionWriter::is_gpr(const RegVal* rv) const {
   return rv->ireg().reg_class == RegClass::GPR_64;
@@ -119,15 +119,28 @@ std::string CFunctionWriter::label(int ir_idx) {
 }
 
 std::string CFunctionWriter::symbol(const std::string& name) {
-  auto it = m_file_symbols->find(name);
+  auto it = m_file->symbols.find(name);
   int idx;
-  if (it == m_file_symbols->end()) {
-    idx = (int)m_file_symbols->size();
-    (*m_file_symbols)[name] = idx;
+  if (it == m_file->symbols.end()) {
+    idx = (int)m_file->symbols.size();
+    m_file->symbols[name] = idx;
   } else {
     idx = it->second;
   }
   return fmt::format("g2c_sym[{}] /* {} */", idx, escape_c_comment(name));
+}
+
+std::string CFunctionWriter::static_addr(const StaticObject* obj) {
+  auto it = m_file->static_idx.find(obj);
+  if (it == m_file->static_idx.end()) {
+    unsupported("objeto estático que no pertenece al fichero");
+  }
+  m_file->used_statics.insert(it->second);
+  // el runtime da el comienzo del objeto; goalc apunta a start + get_addr_offset()
+  // (p. ej. +4 en los basic, detrás de la etiqueta de tipo)
+  auto off = obj->get_addr_offset();
+  return fmt::format("(g2c_gpr)(g2c_static[{}] + {}u) /* {} */", it->second, off,
+                     escape_c_comment(obj->print()));
 }
 
 void CFunctionWriter::line(const std::string& text) {
@@ -225,12 +238,12 @@ std::string function_goal_name(FunctionEnv* fe) {
 
 std::string translate_function(FunctionEnv* fe,
                                const std::string& c_name,
-                               std::map<std::string, int>* syms,
+                               CFunctionWriter::FileState* file,
                                int* nargs) {
   if (fe->is_asm_func) {
     unsupported("asm-func");
   }
-  CFunctionWriter w(fe, syms);
+  CFunctionWriter w(fe, file);
   auto& code = fe->code();
   for (size_t i = 0; i < code.size(); i++) {
     w.begin_ir((int)i);
@@ -244,7 +257,10 @@ std::string translate_function(FunctionEnv* fe,
 
 FileResult emit_file(FileEnv* env, const std::string& obj_name) {
   FileResult result;
-  std::map<std::string, int> syms;
+  CFunctionWriter::FileState state;
+  for (size_t i = 0; i < env->statics().size(); i++) {
+    state.static_idx[env->statics()[i].get()] = (int)i;
+  }
   std::string functions;
   std::vector<std::pair<std::string, std::string>> table;  // nombre GOAL, nombre C
   std::vector<int> table_nargs;
@@ -263,17 +279,17 @@ FileResult emit_file(FileEnv* env, const std::string& obj_name) {
     }
     used_c_names.insert(c_name);
 
-    auto syms_backup = syms;
+    auto state_backup = state;
     try {
       int nargs = 0;
-      auto text = translate_function(fe, c_name, &syms, &nargs);
+      auto text = translate_function(fe, c_name, &state, &nargs);
       functions += fmt::format("/* {} */\n", escape_c_comment(goal_name));
       functions += text + "\n";
       table.emplace_back(goal_name, c_name);
       table_nargs.push_back(nargs);
       result.translated.push_back(goal_name);
     } catch (Unsupported& e) {
-      syms = syms_backup;
+      state = state_backup;
       result.skipped.push_back(fmt::format("{}: {}", goal_name, e.what()));
       functions += fmt::format("/* NO TRADUCIDA: {} -- {} */\n\n", escape_c_comment(goal_name),
                                escape_c_comment(e.what()));
@@ -289,14 +305,20 @@ FileResult emit_file(FileEnv* env, const std::string& obj_name) {
   out += "#pragma GCC diagnostic ignored \"-Wunused-but-set-variable\"\n";
   out += "#pragma GCC diagnostic ignored \"-Wunused-variable\"\n\n";
   // tabla de símbolos: nombre -> dirección GOAL, rellenada al enlazar
-  std::vector<std::string> sym_names(syms.size());
-  for (auto& [name, idx] : syms) {
+  std::vector<std::string> sym_names(state.symbols.size());
+  for (auto& [name, idx] : state.symbols) {
     sym_names.at(idx) = name;
   }
   out += fmt::format("static uint32_t g2c_sym[{}];\n", std::max<size_t>(1, sym_names.size()));
+  // estáticos: índice = posición en FileEnv::statics(), el orden en que goalc los emite
+  out +=
+      fmt::format("static uint32_t g2c_static[{}];\n", std::max<size_t>(1, env->statics().size()));
   out += fmt::format("void {}_link(void) {{\n", file_c);
   for (size_t i = 0; i < sym_names.size(); i++) {
     out += fmt::format("  g2c_sym[{}] = g2c_rt_symbol(\"{}\");\n", i, sym_names[i]);
+  }
+  for (int i : state.used_statics) {
+    out += fmt::format("  g2c_static[{}] = g2c_rt_static(\"{}\", {});\n", i, obj_name, i);
   }
   out += "}\n\n";
   out += functions;
@@ -645,4 +667,35 @@ void IR_StoreConstOffset::do_codegen_c(CFunctionWriter& w) {
   } else {
     unsupported("store desde registro no soportado");
   }
+}
+
+void IR_StaticVarAddr::do_codegen_c(CFunctionWriter& w) {
+  if (!w.is_gpr(m_dest)) {
+    unsupported("dirección estática a registro no GPR");
+  }
+  w.line(fmt::format("{} = {};", w.var(m_dest), w.static_addr(m_src)));
+}
+
+void IR_FunctionCall::do_codegen_c(CFunctionWriter& w) {
+  // goalc x86: add freg, r15; call freg. En goal2c el objeto función de GOAL guarda en su
+  // zona de código el puntero a la función C nativa (G2C_NATIVE_FN). Se llama con la aridad
+  // del llamante, como en GOAL (los argumentos sobrantes se ignoran y los que faltan son
+  // basura); con AAPCS y SysV x86-64 el llamante limpia la pila, así que es seguro en la
+  // práctica aunque C lo considere indefinido.
+  if (!w.is_gpr(m_func) || !w.is_gpr(m_ret)) {
+    unsupported("llamada con función o retorno no GPR (128 bits)");
+  }
+  std::string types, args;
+  for (size_t i = 0; i < m_args.size(); i++) {
+    if (!w.is_gpr(m_args[i])) {
+      unsupported("llamada con argumento de 128 bits");
+    }
+    types += i ? ", g2c_gpr" : "g2c_gpr";
+    args += (i ? ", " : "") + w.var(m_args[i]);
+  }
+  if (types.empty()) {
+    types = "void";
+  }
+  w.line(fmt::format("{} = ((g2c_gpr(*)({}))G2C_NATIVE_FN({}))({});", w.var(m_ret), types,
+                     w.var(m_func), args));
 }

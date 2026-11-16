@@ -180,6 +180,13 @@ TEST_F(Goal2CTests, Math) {
   file_util::write_text_file(in_file, harness_in);
 
   // 4) referencia: el mismo cálculo en el runtime, con el código x86 de goalc
+  // pc-rand es aleatoria de verdad: se sustituye por la misma secuencia determinista que usa
+  // el arnés (contador * 7919) y se restaura al final.
+  shared->compiler.run_test_from_string(
+      "(define *g2c-saved-pc-rand* pc-rand)\n"
+      "(define *g2c-pc-rand-counter* 0)\n"
+      "(set! pc-rand (the-as (function int) (lambda () (set! *g2c-pc-rand-counter* (+ "
+      "*g2c-pc-rand-counter* 1)) (* *g2c-pc-rand-counter* 7919))))\n");
   std::string goal_prog = "(begin\n";
   for (size_t i = 0; i < cases.size(); i++) {
     auto& c = cases[i];
@@ -198,6 +205,7 @@ TEST_F(Goal2CTests, Math) {
   }
   goal_prog += "  0)\n";
   auto msgs = shared->compiler.run_test_from_string(goal_prog);
+  shared->compiler.run_test_from_string("(set! pc-rand *g2c-saved-pc-rand*)");
   std::string ref_text;
   for (auto& m : msgs) {
     ref_text += m;

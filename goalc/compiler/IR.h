@@ -160,6 +160,7 @@ class IR_FunctionCall : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
   void add_constraints(std::vector<IRegConstraint>* constraints, int my_id) override;
 
  protected:
@@ -198,6 +199,7 @@ class IR_StaticVarAddr : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
