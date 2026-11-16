@@ -11,20 +11,32 @@ Después Jak 2 y Jak 3.
 - No usar dumps de la versión oficial de PS Vita/PS3 como fuente.
 
 ## Entorno
-- Ubuntu en WSL2 (Windows). Trabajar siempre en ~/proyectos/jak-vita, nunca en /mnt/c.
+- Ubuntu en WSL2 (Windows). Trabajar siempre en ~/proyectos/jak-project, nunca en /mnt/c.
+  La carpeta DEBE llamarse jak-project: las herramientas de upstream localizan el proyecto
+  buscando ese nombre en su ruta (si no, fallan con "Could not setup project path").
+  El repo de GitHub se sigue llamando jak-vita; eso no importa.
 - VitaSDK en /usr/local/vitasdk (gcc 15), paquetes con `vdpm install <pkg>`.
   Instalados: vitaGL, vitaShaRK, libmathneon, SceShaccCgExt, taihen, zlib.
-- Build de PC: `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang
-  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
-  -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld && cmake --build build -j 12`.
-- Las herramientas de upstream buscan una carpeta llamada "jak-project"; la nuestra se
-  llama jak-vita, así que extractor/goalc/gk necesitan `--proj-path ~/proyectos/jak-vita`
-  (los `task ...` de upstream no lo pasan y fallan con "Could not setup project path").
-- El ISO va en iso_data/ (raíz), NO en iso_data/jak1/: el extractor hace remove_all de
-  iso_data/jak1/ y lo borraría. Extraer:
-  `./build/decompiler/extractor --proj-path "$PWD" -e -d -c "iso_data/<iso>"`, luego
-  `git restore iso_data/jak1/.gitignore`. Arrancar:
-  `./build/game/gk --proj-path "$PWD" -v --game jak1 -- -boot -fakeiso -debug`.
+- Build de PC (flujo del README): `task gen-cmake-release && task build-release`
+  (preset Release-linux-clang, salida en build/). Arrancar el juego: `task boot-game`.
+
+### ISO y extracción (importante)
+- El ISO vive en la RAÍZ de iso_data/ (p. ej. iso_data/<juego>.iso), NUNCA dentro de
+  iso_data/jak1/. Al extraer un ISO, el extractor hace `remove_all(iso_data/jak1/)` y
+  copia ahí los ficheros del disco: un ISO guardado dentro se borraría.
+- iso_data/jak1/ contiene el disco ya extraído (DGO/, CGO/, ...). Es lo que usa
+  `task extract` (README), que decompila desde esa carpeta.
+- Extracción inicial desde el ISO (o tras cambiar de ISO):
+  `./build/decompiler/extractor -e -d -c "iso_data/<juego>.iso"`; después
+  `git restore iso_data/jak1/.gitignore` (el remove_all borra también ese fichero versionado).
+- Versión actual: SCUS-97124 (NTSC-U, black label → `task set-decomp-ntscv1`).
+
+### Capturas de pantalla
+- Solo de la ventana de Vita3K o del juego, con vita/tools/screenshot.ps1
+  (`-ProcessName Vita3K` o `-TitleLike 'OpenGOAL*'`). NUNCA capturar la pantalla
+  completa ni listar ventanas/procesos con título del escritorio de Windows.
+
+### Herramientas
 - Vita3K está instalado en Windows: copiar el .vpk a /mnt/c/Users/<usuario>/jakvita/.
 - Vita real con HENkaku, VitaShell, vitacompanion (FTP 1337, comandos 1338), ShaRKF00D.
 
@@ -58,6 +70,23 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - Despliegue a la Vita física: `VITA_IP=<ip> vita/tools/deploy.sh` (ver --help).
 - Logs en la Vita: ux0:data/jakvita/log.txt además de stdout.
 - Probar el backend C primero en PC (Linux) antes de llevarlo a la Vita.
+- Varias apps de Vita, elegidas con APP= en emu_test.sh y deploy.sh:
+  hello (JAKV00001, log.txt) y bench (JAKV00002, benchmark goal2c, bench.txt).
+  Resultados de Vita3K en build-vita/emu/<APP>/.
+
+## goal2c (Fase 1+)
+- Código: goalc/c_backend/ (CBackend.*, runtime/goal2c_rt.h). Enganche en upstream:
+  IR::do_codegen_c (IR.h) y la opción `:goal2c "salida.c"` de asm-file.
+  Ejemplo en el REPL/goalc -c: `(asm-file "goal_src/jak1/engine/math/math.gc" :goal2c "out/goal2c/jak1/math.c")`.
+- Semántica: replicar EXACTAMENTE la de do_codegen_x86 de cada IR (la referencia es goalc
+  x86). Ojo: float->GPR extiende el signo; IMUL_32/DIV_32 extienden el signo; desplazamientos
+  enmascarados a 6 bits; comparaciones float con semántica de comiss.
+- Validación en PC (obligatoria antes de llevar nada a la Vita):
+  `ninja -C build goalc-test && build/goalc-test --gtest_filter='Goal2CTests.*'`
+  Transpila math.gc, compila el C con cc + test/goal2c/harness.c y compara bit a bit con
+  goalc ejecutando test/goal2c/math_cases.txt en el runtime real. Genera
+  out/goal2c/jak1/{math.c,math_expected.h}, que usa el benchmark de la Vita.
+- No romper upstream: tras tocar goalc, pasar `build/goalc-test` completo.
 
 ## Fases
 0. Fork compila en PC; extractor corre con el ISO de Jak 1. Hello world vitaGL en Vita.

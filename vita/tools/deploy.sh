@@ -4,7 +4,7 @@
 # Uso:
 #   VITA_IP=192.168.1.50 vita/tools/deploy.sh            # sube el .vpk, lo instala y lo lanza
 #   VITA_IP=192.168.1.50 vita/tools/deploy.sh --eboot    # solo reemplaza eboot.bin (rápido, ya instalado)
-#   VITA_IP=192.168.1.50 vita/tools/deploy.sh --log      # descarga ux0:data/jakvita/log.txt
+#   VITA_IP=192.168.1.50 vita/tools/deploy.sh --log      # descarga el log de la app (log.txt o bench.txt)
 #   vita/tools/deploy.sh --vita3k                        # copia el .vpk a C:\Users\<usuario>\jakvita\
 #
 # Variables:
@@ -12,17 +12,23 @@
 #   BUILD_DIR      directorio de build (por defecto build-vita)
 #   INSTALL_WAIT   segundos a esperar a que termine la instalación del vpk (por defecto 15)
 #   WIN_USER       usuario de Windows para --vita3k (se autodetecta si no se da)
+#   APP            hello (por defecto, JAKV00001) | bench (benchmark goal2c, JAKV00002)
 set -euo pipefail
 
-TITLE_ID="JAKV00001"
+APP="${APP:-hello}"
+case "$APP" in
+  hello) TITLE_ID="JAKV00001"; VPK_NAME="jakvita.vpk"; EBOOT_NAME="eboot.bin"; APP_LOG="log.txt" ;;
+  bench) TITLE_ID="JAKV00002"; VPK_NAME="jakvita_bench.vpk"; EBOOT_NAME="bench_eboot.bin"; APP_LOG="bench.txt" ;;
+  *) echo "error: APP desconocida: $APP (hello|bench)" >&2; exit 1 ;;
+esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build-vita}"
-VPK="$BUILD_DIR/jakvita.vpk"
-EBOOT="$BUILD_DIR/eboot.bin"
+VPK="$BUILD_DIR/$VPK_NAME"
+EBOOT="$BUILD_DIR/$EBOOT_NAME"
 FTP_PORT=1337
 CMD_PORT=1338
 INSTALL_WAIT="${INSTALL_WAIT:-15}"
-REMOTE_VPK="ux0:data/jakvita/jakvita.vpk"
+REMOTE_VPK="ux0:data/jakvita/$VPK_NAME"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -71,8 +77,8 @@ case "$mode" in
     ;;
   --log)
     need_ip
-    out="$ROOT/build-vita/log.txt"
-    ftp_get "ux0:data/jakvita/log.txt" "$out"
+    out="$BUILD_DIR/$APP_LOG"
+    ftp_get "ux0:data/jakvita/$APP_LOG" "$out"
     echo ">> guardado en $out"
     cat "$out"
     ;;
@@ -85,10 +91,10 @@ case "$mode" in
     dst="/mnt/c/Users/$WIN_USER/jakvita"
     mkdir -p "$dst"
     cp "$VPK" "$dst/"
-    echo ">> copiado a $dst/jakvita.vpk"
+    echo ">> copiado a $dst/$VPK_NAME"
     ;;
   -h|--help)
-    sed -n '2,15p' "$0"
+    sed -n '2,17p' "$0"
     ;;
   *)
     die "modo desconocido: $mode (usa --help)"

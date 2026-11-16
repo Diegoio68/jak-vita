@@ -33,7 +33,7 @@ add_executable(jakvita
 )
 
 # Orden importante: vitaGL depende de vitashark/mathneon y de los stubs del sistema.
-target_link_libraries(jakvita
+set(JAKVITA_GL_LIBS
   vitaGL
   vitashark
   SceShaccCgExt
@@ -53,9 +53,51 @@ target_link_libraries(jakvita
   m
   z
 )
+target_link_libraries(jakvita ${JAKVITA_GL_LIBS})
 
 vita_create_self(eboot.bin jakvita UNSAFE)
 vita_create_vpk(jakvita.vpk ${VITA_TITLEID} eboot.bin
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
 )
+
+# ---------------------------------------------------------------------------
+# Benchmark goal2c (Fase 1): JAKV00002, log en ux0:data/jakvita/bench.txt
+# Necesita el C generado y la referencia de goalc, que crea el test de PC:
+#   build/goalc-test --gtest_filter='Goal2CTests.*'
+# ---------------------------------------------------------------------------
+set(G2C_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../out/goal2c/jak1" CACHE PATH "salida de goal2c")
+set(G2C_MATH_C "${G2C_OUT_DIR}/math.c")
+if(EXISTS "${G2C_MATH_C}" AND EXISTS "${G2C_OUT_DIR}/math_expected.h")
+  set(G2C_RT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../goalc/c_backend/runtime")
+  set(G2C_C_FLAGS -std=c11 -O2 -Wall -Wextra -Werror)
+
+  # el mismo fichero generado, compilado dos veces
+  add_library(g2c_math64 OBJECT "${G2C_MATH_C}")
+  target_include_directories(g2c_math64 PRIVATE "${G2C_RT_DIR}")
+  target_compile_options(g2c_math64 PRIVATE ${G2C_C_FLAGS})
+
+  add_library(g2c_math32 OBJECT "${G2C_MATH_C}")
+  target_include_directories(g2c_math32 PRIVATE "${G2C_RT_DIR}")
+  target_compile_options(g2c_math32 PRIVATE ${G2C_C_FLAGS})
+  target_compile_definitions(g2c_math32 PRIVATE
+    G2C_GPR32 g2c_math_funcs=g2c_math_funcs32 g2c_math_link=g2c_math_link32)
+
+  add_executable(jakvita_bench
+    bench/main.cpp
+    src/log.cpp
+    $<TARGET_OBJECTS:g2c_math64>
+    $<TARGET_OBJECTS:g2c_math32>
+  )
+  target_include_directories(jakvita_bench PRIVATE "${G2C_OUT_DIR}")
+  target_link_libraries(jakvita_bench ${JAKVITA_GL_LIBS})
+
+  vita_create_self(bench_eboot.bin jakvita_bench UNSAFE)
+  vita_create_vpk(jakvita_bench.vpk JAKV00002 bench_eboot.bin
+    VERSION ${VITA_VERSION}
+    NAME "Jak Vita bench"
+  )
+else()
+  message(STATUS "goal2c: no está ${G2C_MATH_C}; no se compila el benchmark "
+                 "(ejecuta antes build/goalc-test --gtest_filter='Goal2CTests.*')")
+endif()

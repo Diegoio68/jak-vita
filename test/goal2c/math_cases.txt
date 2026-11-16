@@ -1,0 +1,73 @@
+# goal2c (Jak Vita): casos para validar math.gc transpilado contra goalc (x86).
+# Formato: <funcion> <tipo-retorno> <args...>
+#   tipo-retorno: int | float | bool
+#   args: i:<decimal con signo> | f:<float>   (el float se pasa por su patrón de bits)
+# El orden importa: rand-vu-init cambia el estado global *_vu-reg-R_* que lee rand-vu-nostep.
+
+truncate float f:0
+truncate float f:1.5
+truncate float f:-1.5
+truncate float f:2.999
+truncate float f:-0.0
+truncate float f:123456.75
+truncate float f:0.3
+truncate float f:1e10
+truncate float f:-1e10
+
+integral? bool f:1.0
+integral? bool f:1.5
+integral? bool f:-3.0
+integral? bool f:0
+integral? bool f:1e10
+
+fractional-part float f:1.25
+fractional-part float f:-1.25
+fractional-part float f:100.875
+fractional-part float f:0
+
+log2 int i:1
+log2 int i:2
+log2 int i:3
+log2 int i:37
+log2 int i:1024
+log2 int i:1000000
+log2 int i:0
+log2 int i:-8
+log2 int i:2147483647
+
+seek float f:1 f:2 f:0.25
+seek float f:2 f:1 f:0.25
+seek float f:1 f:1.1 f:0.5
+seek float f:0 f:-5 f:1
+seek float f:-1 f:-1 f:0
+
+lerp float f:0 f:10 f:0.5
+lerp float f:-5 f:5 f:0.25
+lerp float f:1 f:2 f:1.5
+lerp float f:3 f:3 f:0.7
+
+lerp-scale float f:0 f:100 f:5 f:0 f:10
+lerp-scale float f:0 f:100 f:-5 f:0 f:10
+lerp-scale float f:0 f:100 f:15 f:0 f:10
+lerp-scale float f:10 f:20 f:0.5 f:0 f:1
+lerp-scale float f:0 f:1 f:3 f:3 f:3
+
+lerp-clamp float f:0 f:10 f:-1
+lerp-clamp float f:0 f:10 f:0.3
+lerp-clamp float f:0 f:10 f:2
+lerp-clamp float f:0 f:10 f:1
+lerp-clamp float f:0 f:10 f:0
+
+seekl int i:0 i:10 i:3
+seekl int i:10 i:0 i:3
+seekl int i:5 i:6 i:3
+seekl int i:-100 i:100 i:1000
+seekl int i:0 i:0 i:0
+seekl int i:5 i:7 i:2
+
+rand-vu-init float f:1.418091058731079
+rand-vu-nostep float
+rand-vu-init float f:0.5
+rand-vu-nostep float
+rand-vu-init float f:-3.75
+rand-vu-nostep float

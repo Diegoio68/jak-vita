@@ -17,6 +17,7 @@ set(GOALC_TEST_CASES
     ${CMAKE_CURRENT_LIST_DIR}/test_with_game.cpp
     ${CMAKE_CURRENT_LIST_DIR}/test_type_consistency.cpp
     ${CMAKE_CURRENT_LIST_DIR}/test_vector_float.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/test_goal2c.cpp  # goal2c (Jak Vita)
 )
 
 set(GOALC_TEST_FRAMEWORK_SOURCES

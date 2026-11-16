@@ -7,7 +7,7 @@
 #   4. Copia log.txt de la app y vita3k.log del emulador.
 #   5. Cierra el emulador.
 #
-# Resultados en build-vita/emu/: screenshot.png, log.txt, vita3k.log, vita3k_errors.txt
+# Resultados en build-vita/emu/<APP>/: screenshot.png, log.txt, vita3k.log, vita3k_errors.txt
 # Código de salida: 0 = la app seguía viva en la captura, su log no está vacío y no
 # contiene "ERROR". Revisar igualmente screenshot.png: el script no mira la imagen.
 #
@@ -15,14 +15,20 @@
 #   VITA3K_EXE   ruta Windows a Vita3K.exe (si no, se lee de vita/tools/.vita3k_path, no versionado)
 #   EMU_WAIT     segundos antes de la captura (por defecto 8)
 #   BUILD_DIR    directorio de build (por defecto build-vita)
+#   APP          hello (por defecto, JAKV00001) | bench (benchmark goal2c, JAKV00002)
 set -uo pipefail
 
-TITLE_ID="JAKV00001"
+APP="${APP:-hello}"
+case "$APP" in
+  hello) TITLE_ID="JAKV00001"; VPK_NAME="jakvita.vpk"; APP_LOG="log.txt" ;;
+  bench) TITLE_ID="JAKV00002"; VPK_NAME="jakvita_bench.vpk"; APP_LOG="bench.txt" ;;
+  *) echo "error: APP desconocida: $APP (hello|bench)" >&2; exit 1 ;;
+esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOOLS="$ROOT/vita/tools"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build-vita}"
-VPK="$BUILD_DIR/jakvita.vpk"
-OUT="$BUILD_DIR/emu"
+VPK="$BUILD_DIR/$VPK_NAME"
+OUT="$BUILD_DIR/emu/$APP"
 EMU_WAIT="${EMU_WAIT:-8}"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -67,9 +73,9 @@ kill_emu() {
 # --- 1. limpiar ---
 kill_emu
 sleep 1
-rm -rf "$PREF/ux0/app/$TITLE_ID" "$PREF/ux0/data/jakvita/log.txt"
-cp "$VPK" "$STAGE/jakvita.vpk"
-VPK_WIN="$(wslpath -w "$STAGE/jakvita.vpk")"
+rm -rf "$PREF/ux0/app/$TITLE_ID" "$PREF/ux0/data/jakvita/$APP_LOG"
+cp "$VPK" "$STAGE/$VPK_NAME"
+VPK_WIN="$(wslpath -w "$STAGE/$VPK_NAME")"
 
 # --- 2. instalar y lanzar ---
 echo ">> Vita3K: instalando y lanzando $TITLE_ID"
@@ -94,7 +100,7 @@ wait 2>/dev/null
 sleep 1
 
 # --- 4. copiar logs ---
-[[ -f "$PREF/ux0/data/jakvita/log.txt" ]] && cp "$PREF/ux0/data/jakvita/log.txt" "$OUT/log.txt"
+[[ -f "$PREF/ux0/data/jakvita/$APP_LOG" ]] && cp "$PREF/ux0/data/jakvita/$APP_LOG" "$OUT/log.txt"
 [[ -f "$EMU_DIR/vita3k.log" ]] && tr -d '\r' < "$EMU_DIR/vita3k.log" > "$OUT/vita3k.log"
 grep -E '\|(E|C)\|' "$OUT/vita3k.log" 2>/dev/null > "$OUT/vita3k_errors.txt"
 

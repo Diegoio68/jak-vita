@@ -10,14 +10,13 @@ namespace jakvita {
 
 namespace {
 constexpr const char* kLogDir = "ux0:data/jakvita";
-constexpr const char* kLogPath = "ux0:data/jakvita/log.txt";
 FILE* g_log = nullptr;
 }  // namespace
 
-void log_init() {
+void log_init(const char* path) {
   sceIoMkdir("ux0:data", 0777);  // ya existe en la consola, pero no cuesta nada
   sceIoMkdir(kLogDir, 0777);
-  g_log = std::fopen(kLogPath, "w");
+  g_log = std::fopen(path, "w");
 }
 
 void log_shutdown() {

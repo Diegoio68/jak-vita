@@ -136,7 +136,14 @@ Val* Compiler::compile_asm_file(const goos::Object& form, const goos::Object& re
 
   // parse arguments
   bool last_was_disasm = false;
+  bool last_was_goal2c = false;
   for_each_in_list(rest, [&](const goos::Object& o) {
+    if (last_was_goal2c) {  // goal2c (Jak Vita)
+      last_was_goal2c = false;
+      options.goal2c_output_file = as_string(o);
+      i++;
+      return;
+    }
     if (last_was_disasm) {
       last_was_disasm = false;
       if (o.type == goos::ObjectType::STRING) {
@@ -164,6 +171,8 @@ Val* Compiler::compile_asm_file(const goos::Object& form, const goos::Object& re
         last_was_disasm = true;
       } else if (setting == ":disasm-code-only") {
         options.disasm_code_only = true;
+      } else if (setting == ":goal2c") {  // goal2c (Jak Vita): :goal2c "salida.c"
+        last_was_goal2c = true;
       } else {
         throw_compiler_error(form, "The option {} was not recognized for asm-file.", setting);
       }

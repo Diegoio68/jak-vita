@@ -38,6 +38,7 @@ struct CompilationOptions {
   bool disassemble = false;             // either print disassembly to stdout or output_file
   bool disasm_code_only = false;        // if on, IR and source lines are not printed
   bool print_time = false;              // print timing statistics
+  std::string goal2c_output_file;       // goal2c (Jak Vita): si no está vacío, escribe C aquí
 };
 
 struct GlobalConstantInfo {

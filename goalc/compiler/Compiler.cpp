@@ -10,6 +10,7 @@
 #include "common/link_types.h"
 #include "common/util/FileUtil.h"
 
+#include "goalc/c_backend/CBackend.h"
 #include "goalc/compiler/CodeGenerator.h"
 #include "goalc/emitter/InstructionSet.h"
 #include "goalc/make/Tools.h"
@@ -491,6 +492,18 @@ void Compiler::asm_file(const CompilationOptions& options) {
 
   // COMPILE
   auto obj_file = compile_object_file(obj_file_name, code, !options.no_code);
+
+  // goal2c (Jak Vita): IR -> C, antes del register allocator
+  if (!options.goal2c_output_file.empty()) {
+    auto res = goal2c::emit_file(obj_file, obj_file_name);
+    file_util::create_dir_if_needed_for_file(options.goal2c_output_file);
+    file_util::write_text_file(options.goal2c_output_file, res.c_source);
+    lg::print("[goal2c] {}: {} funciones traducidas, {} sin traducir -> {}\n", obj_file_name,
+              res.translated.size(), res.skipped.size(), options.goal2c_output_file);
+    for (auto& s : res.skipped) {
+      lg::print("[goal2c]   sin traducir: {}\n", s);
+    }
+  }
 
   if (options.color) {
     // register allocation

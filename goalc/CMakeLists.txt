@@ -42,6 +42,7 @@ add_library(compiler
         compiler/Env.cpp
         compiler/Val.cpp
         compiler/IR.cpp
+        c_backend/CBackend.cpp
         compiler/CompilerSettings.cpp
         compiler/CodeGenerator.cpp
         compiler/StaticObject.cpp

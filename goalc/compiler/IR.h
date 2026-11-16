@@ -9,6 +9,11 @@
 #include "goalc/emitter/Register.h"
 #include "goalc/regalloc/allocator_interface.h"
 
+// goal2c (Jak Vita): backend IR -> C, ver goalc/c_backend/CBackend.h
+namespace goal2c {
+class CFunctionWriter;
+}
+
 class IR {
  public:
   virtual std::string print() = 0;
@@ -19,6 +24,8 @@ class IR {
   virtual void do_codegen_arm64(emitter::ObjectGenerator* gen,
                                 const AllocationResult& allocs,
                                 emitter::IR_Record irec) = 0;
+  // goal2c (Jak Vita): traduce la instrucción a C. Por defecto lanza "no soportado".
+  virtual void do_codegen_c(goal2c::CFunctionWriter& w);
   virtual void add_constraints(std::vector<IRegConstraint>* constraints, int my_id) {
     (void)constraints;
     (void)my_id;
@@ -38,6 +45,7 @@ class IR_Return : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
   const RegVal* value() { return m_value; }
 
  protected:
@@ -57,6 +65,7 @@ class IR_LoadConstant64 : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -74,6 +83,7 @@ class IR_LoadSymbolPointer : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -91,6 +101,7 @@ class IR_SetSymbolValue : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const SymbolVal* m_dest = nullptr;
@@ -108,6 +119,7 @@ class IR_GetSymbolValue : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -126,6 +138,7 @@ class IR_RegSet : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -202,6 +215,7 @@ class IR_StaticVarLoad : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const RegVal* m_dest = nullptr;
@@ -264,6 +278,7 @@ class IR_IntegerMath : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
   IntegerMathKind get_kind() const { return m_kind; }
 
  protected:
@@ -287,6 +302,7 @@ class IR_FloatMath : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
   FloatMathKind get_kind() const { return m_kind; }
 
  protected:
@@ -320,6 +336,7 @@ class IR_GotoLabel : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  protected:
   const Label* m_dest = nullptr;
@@ -337,6 +354,7 @@ class IR_ConditionalBranch : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
   void mark_as_resolved() { m_resolved = true; }
 
   Condition condition;
@@ -357,6 +375,7 @@ class IR_Null : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 };
 
 class IR_ValueReset : public IR {
@@ -370,6 +389,7 @@ class IR_ValueReset : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   std::vector<RegVal*> m_args;
@@ -386,6 +406,7 @@ class IR_FloatToInt : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   const RegVal* m_dest = nullptr;
@@ -403,6 +424,7 @@ class IR_IntToFloat : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   const RegVal* m_dest = nullptr;
@@ -437,6 +459,7 @@ class IR_Nop : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 };
 
 class IR_Asm : public IR {
@@ -463,6 +486,7 @@ class IR_LoadConstOffset : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   const RegVal* m_dest = nullptr;
@@ -486,6 +510,7 @@ class IR_StoreConstOffset : public IR_Asm {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   const RegVal* m_value = nullptr;
