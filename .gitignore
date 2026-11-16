@@ -89,3 +89,13 @@ unifont-15.0.03.ttf
 *.diff
 goalc-report.html
 _new-all-types.gc
+
+# Jak Vita: nunca commitear datos del juego ni artefactos de build
+/iso_data/
+/decompiler_out*/
+out/
+/build*/
+*.iso
+*.ISO
+*.vpk
+/vita/tools/.vita3k_path

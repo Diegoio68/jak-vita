@@ -33,8 +33,18 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - vitaGL necesita libshacccg.suprx en la consola (ShaRKF00D).
 
 ## Flujo de trabajo
-- Claude Code escribe y compila. Diego prueba en Vita3K y en hardware real y reporta.
+- Claude Code escribe y compila. Diego prueba en hardware real y reporta.
 - Antes de pedir prueba: compila sin errores. Indicar qué probar y qué se espera ver.
+- Prueba en Vita3K obligatoria antes de pedir prueba en la Vita física:
+  `cmake --build build-vita && vita/tools/emu_test.sh` (desde WSL). Instala el .vpk,
+  lanza JAKV00001, captura la ventana y copia logs a build-vita/emu/
+  (screenshot.png, log.txt de la app, vita3k.log, vita3k_errors.txt) y cierra el emulador.
+  Revisar la captura y los logs; exit 0 = la app seguía viva y su log no está vacío ni
+  tiene "ERROR" (el script no mira la imagen: revisarla siempre).
+  Solo pedir a Diego que pruebe en la Vita lo que ya pasó en Vita3K (o explicar por qué
+  algo no se puede comprobar en el emulador).
+- Ruta de Vita3K.exe: variable VITA3K_EXE o fichero vita/tools/.vita3k_path (no versionado).
+- Despliegue a la Vita física: `VITA_IP=<ip> vita/tools/deploy.sh` (ver --help).
 - Logs en la Vita: ux0:data/jakvita/log.txt además de stdout.
 - Probar el backend C primero en PC (Linux) antes de llevarlo a la Vita.
 
