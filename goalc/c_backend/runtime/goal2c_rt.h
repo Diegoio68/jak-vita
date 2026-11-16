@@ -41,23 +41,84 @@ extern uint8_t* g2c_mem;
 /* Dirección GOAL de un símbolo por nombre. La define el runtime (o el arnés). */
 uint32_t g2c_rt_symbol(const char* name);
 
-/* Dirección GOAL del objeto estático número idx (orden de FileEnv::statics) del fichero
-   obj_name, apuntando a su comienzo. La define el runtime (o el arnés). */
-uint32_t g2c_rt_static(const char* obj_name, int idx);
-
-/* Puntero a la función C nativa de un objeto función de GOAL. Convención goal2c: la zona
-   de código del objeto función (la dirección a la que apunta el valor GOAL) guarda el
-   puntero nativo. El runtime de PC puede redefinirlo para el modo mixto x86 + C. */
-#ifndef G2C_NATIVE_FN
-#define G2C_NATIVE_FN(goal_addr) (*(void**)G2C_ADDR(goal_addr))
-#endif
+/* Dirección GOAL de un objeto estático del fichero obj_name: está en el segmento seg del
+   objeto cargado, en la posición offset (la que le dio goalc al generar el objeto). La define
+   el runtime (o el arnés). Devuelve el comienzo del objeto estático. */
+uint32_t g2c_rt_static(const char* obj_name, int seg, int offset);
 
 /* Entrada de la tabla de funciones de un fichero generado. */
 typedef struct {
-  const char* name;  /* nombre GOAL (p. ej. "lerp-clamp") */
-  void* fn;          /* puntero a la función C */
+  const char* name;  /* nombre GOAL ("lerp-clamp") o "(method <id> <tipo>)" */
+  void* fn;          /* puntero a la función C: g2c_gpr f(g2c_gpr a0, ...) */
   int nargs;         /* número de argumentos (todos g2c_gpr) */
+  void* fn_arr;      /* si nargs > 6: g2c_gpr f(const uint64_t* args8); si no, NULL */
 } g2c_func_entry;
+
+/* Descripción de un fichero generado: lo que necesita el runtime para enlazarlo. */
+typedef struct {
+  const char* obj_name;          /* nombre del objeto GOAL ("math") */
+  void (*link)(void);            /* resuelve símbolos y estáticos */
+  const g2c_func_entry* funcs;   /* funciones traducidas, terminada en {0} */
+  uint32_t seg_sizes[3];         /* tamaños de segmento del objeto de goalc (huella) */
+} g2c_file_info;
+
+/* ---- interfaz con el runtime de PC (modo mixto, librería dinámica) ----
+   La librería (C generado + registro) exporta:
+     const g2c_file_info* const* g2c_init(const g2c_host* host);
+   que guarda el host y devuelve la lista de ficheros (terminada en NULL). */
+typedef struct {
+  uint8_t* mem;                                                    /* base memoria GOAL */
+  uint32_t (*symbol)(const char* name);                            /* g2c_rt_symbol */
+  uint32_t (*static_addr)(const char* obj, int seg, int off);      /* g2c_rt_static */
+  uint64_t (*call)(uint32_t fn, int nargs, const uint64_t* args);  /* g2c_host_call */
+} g2c_host;
+typedef const g2c_file_info* const* (*g2c_init_fn)(const g2c_host* host);
+
+/* ---- llamadas a funciones GOAL ----
+   G2C_CALLn(f, a0, ..): f es la dirección GOAL del objeto función.
+   - Por defecto (Vita, y en general todo el código en C): el objeto función guarda en su zona
+     de código el puntero a la función C nativa (G2C_NATIVE_FN) y se llama directamente con
+     la aridad del llamante.
+   - G2C_PC_MIXED (runtime de PC con funciones x86 de goalc y C a la vez): la función llamada
+     puede ser código x86, así que se pasa por el runtime (g2c_host_call). */
+#ifdef G2C_PC_MIXED
+uint64_t g2c_host_call(uint32_t fn, int nargs, const uint64_t* args);
+#define G2C_ARGS(...) ((const uint64_t[]){__VA_ARGS__})
+#define G2C_CALL0(f) ((g2c_gpr)g2c_host_call((uint32_t)(f), 0, G2C_ARGS(0)))
+#define G2C_CALL1(f, a) ((g2c_gpr)g2c_host_call((uint32_t)(f), 1, G2C_ARGS(a)))
+#define G2C_CALL2(f, a, b) ((g2c_gpr)g2c_host_call((uint32_t)(f), 2, G2C_ARGS(a, b)))
+#define G2C_CALL3(f, a, b, c) ((g2c_gpr)g2c_host_call((uint32_t)(f), 3, G2C_ARGS(a, b, c)))
+#define G2C_CALL4(f, a, b, c, d) ((g2c_gpr)g2c_host_call((uint32_t)(f), 4, G2C_ARGS(a, b, c, d)))
+#define G2C_CALL5(f, a, b, c, d, e) \
+  ((g2c_gpr)g2c_host_call((uint32_t)(f), 5, G2C_ARGS(a, b, c, d, e)))
+#define G2C_CALL6(f, a, b, c, d, e, g) \
+  ((g2c_gpr)g2c_host_call((uint32_t)(f), 6, G2C_ARGS(a, b, c, d, e, g)))
+#define G2C_CALL7(f, a, b, c, d, e, g, h) \
+  ((g2c_gpr)g2c_host_call((uint32_t)(f), 7, G2C_ARGS(a, b, c, d, e, g, h)))
+#define G2C_CALL8(f, a, b, c, d, e, g, h, i) \
+  ((g2c_gpr)g2c_host_call((uint32_t)(f), 8, G2C_ARGS(a, b, c, d, e, g, h, i)))
+#else
+#ifndef G2C_NATIVE_FN
+#define G2C_NATIVE_FN(goal_addr) (*(void**)G2C_ADDR(goal_addr))
+#endif
+#define G2C_T g2c_gpr
+#define G2C_CALL0(f) (((G2C_T(*)(void))G2C_NATIVE_FN(f))())
+#define G2C_CALL1(f, a) (((G2C_T(*)(G2C_T))G2C_NATIVE_FN(f))(a))
+#define G2C_CALL2(f, a, b) (((G2C_T(*)(G2C_T, G2C_T))G2C_NATIVE_FN(f))(a, b))
+#define G2C_CALL3(f, a, b, c) (((G2C_T(*)(G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))(a, b, c))
+#define G2C_CALL4(f, a, b, c, d) \
+  (((G2C_T(*)(G2C_T, G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))(a, b, c, d))
+#define G2C_CALL5(f, a, b, c, d, e) \
+  (((G2C_T(*)(G2C_T, G2C_T, G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))(a, b, c, d, e))
+#define G2C_CALL6(f, a, b, c, d, e, g) \
+  (((G2C_T(*)(G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))(a, b, c, d, e, g))
+#define G2C_CALL7(f, a, b, c, d, e, g, h)                                         \
+  (((G2C_T(*)(G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))( \
+      a, b, c, d, e, g, h))
+#define G2C_CALL8(f, a, b, c, d, e, g, h, i)                                             \
+  (((G2C_T(*)(G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T, G2C_T))G2C_NATIVE_FN(f))( \
+      a, b, c, d, e, g, h, i))
+#endif
 
 /* ---- conversiones de bits ---- */
 static inline float g2c_bits_to_f(uint32_t u) {

@@ -70,9 +70,10 @@ static uint32_t goal_alloc(uint32_t size) {
 
 /* estáticos: el arnés no tiene los datos reales del objeto .go; devuelve direcciones
    únicas (sirve para funciones que solo pasan la dirección, no para leer el contenido) */
-uint32_t g2c_rt_static(const char* obj_name, int idx) {
+uint32_t g2c_rt_static(const char* obj_name, int seg, int offset) {
   (void)obj_name;
-  (void)idx;
+  (void)seg;
+  (void)offset;
   return goal_alloc(64);
 }
 

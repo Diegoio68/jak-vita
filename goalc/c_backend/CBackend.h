@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "common/common_types.h"
+
 class FileEnv;
 class FunctionEnv;
 class RegVal;
@@ -77,6 +79,9 @@ class CFunctionWriter {
   std::vector<std::pair<int, std::string>> m_body;
 };
 
+//! Objeto estático -> (segmento, posición dentro del segmento) en el objeto generado.
+using StaticLocations = std::map<const StaticObject*, std::pair<int, int>>;
+
 struct FileResult {
   std::string c_source;
   std::vector<std::string> translated;  // funciones traducidas
@@ -84,7 +89,12 @@ struct FileResult {
 };
 
 //! Traduce todas las funciones (no top-level) de un FileEnv a un fichero C.
-FileResult emit_file(FileEnv* env, const std::string& obj_name);
+//! statics: ubicación de cada estático en el objeto generado por goalc para este fichero.
+//! object_data: ese objeto (se usa para guardar los tamaños de segmento como huella).
+FileResult emit_file(FileEnv* env,
+                     const std::string& obj_name,
+                     const StaticLocations& statics,
+                     const std::vector<u8>& object_data);
 
 //! Convierte un nombre GOAL en un identificador C válido.
 std::string mangle(const std::string& goal_name);

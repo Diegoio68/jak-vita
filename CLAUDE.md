@@ -95,7 +95,27 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   Transpila math.gc, compila el C con cc + test/goal2c/harness.c y compara bit a bit con
   goalc ejecutando test/goal2c/math_cases.txt en el runtime real. Genera
   out/goal2c/jak1/{math.c,math_expected.h}, que usa el benchmark de la Vita.
-- No romper upstream: tras tocar goalc, pasar `build/goalc-test` completo.
+- No romper upstream: tras tocar goalc o el runtime, pasar `build/goalc-test` completo.
+
+### Modo mixto en el runtime de PC (x86 de goalc + C de goal2c en el juego real)
+- Generar C de un fichero: `(asm-file "<gc>" :goal2c "out/goal2c/jak1/<obj>.c")`. Además del
+  .c escribe <obj>.c.o, el objeto de goalc, que debe ser IDÉNTICO al out/jak1/obj/<obj>.o
+  que carga el juego (de él salen las posiciones de los estáticos y la huella de segmentos).
+- Librería: `python3 goalc/c_backend/tools/build_pc_lib.py --dir out/goal2c/jak1
+  --out out/goal2c/jak1/libgoal2c_jak1.so` (todo el C de la carpeta, con -DG2C_PC_MIXED).
+- Jugar con ella: `GOAL2C_LIB=$PWD/out/goal2c/jak1/libgoal2c_jak1.so task boot-game`
+  (o gk directamente). El log dice "[goal2c] <obj>: N funciones en C". Si el objeto cargado
+  no coincide con el transpilado, ese fichero se queda en x86 (aviso en el log).
+- Runtime: game/goal2c/goal2c_jak1.cpp, enganchado en klink.cpp DESPUÉS del top-level.
+  x86->C: objeto función que guarda r13 (pp) y salta a _arg_call_systemv. C->x86:
+  _call_goal8_asm_systemv. Solo Linux x86-64.
+- Tests: Goal2CTests.Math (referencia goalc) y Goal2CMixedTests.MathInGame (mismos casos e
+  inspect en el juego con las funciones en C): `build/goalc-test --gtest_filter='Goal2C*'`.
+- Para comprobar que un test sirve: romper a propósito el C generado y ver que falla.
+
+### Benchmarks
+- Siempre varias ejecuciones (vita/bench: 7, alternando variantes) y reportar la MEDIANA
+  (con rango mín.-máx.), nunca el mejor tiempo ni una ejecución suelta.
 - Decisión riesgo 3 (2026-11-16, medido en Vita real a 333 MHz con vita/bench):
   los GPR del C generado son u64 (semántica exacta de GOAL). u64 cuesta +8 % total frente
   a u32 en math.gc (rango 0.97x-1.21x por función), por debajo del umbral del 15-20 %.

@@ -3,6 +3,7 @@
 #include "common/log/log.h"
 #include "common/symbols.h"
 
+#include "game/goal2c/goal2c_jak1.h"  // goal2c (Jak Vita)
 #include "game/kernel/common/fileio.h"
 #include "game/kernel/common/klink.h"
 #include "game/kernel/common/kmachine.h"
@@ -568,6 +569,9 @@ void link_control::jak1_finish(bool jump_from_c_to_goal) {
         call_goal(m_entry.cast<Function>(), 0, 0, 0, s7.offset, g_ee_main_mem);
       }
     }
+
+    // goal2c (Jak Vita): modo mixto de PC, sustituye funciones x86 por su versión en C
+    goal2c_runtime::after_link_jak1(m_object_name, ofh);
 
     // inform compiler that we loaded.
     if (m_flags & LINK_FLAG_OUTPUT_LOAD) {

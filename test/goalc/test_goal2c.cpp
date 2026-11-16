@@ -15,6 +15,7 @@
  */
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -22,6 +23,7 @@
 
 #include "common/util/FileUtil.h"
 
+#include "game/goal2c/goal2c_jak1.h"
 #include "game/runtime.h"
 #include "goalc/compiler/Compiler.h"
 #include "gtest/gtest.h"
@@ -109,6 +111,68 @@ u64 normalize(const std::string& kind, u64 raw, u64 sym_t, u64 sym_f, bool* ok) 
   return raw;
 }
 
+//! Ejecuta los casos en el runtime (lo que haya en cada símbolo: x86 de goalc o C de
+//! goal2c en modo mixto) y devuelve el valor de cada uno. pc-rand es aleatoria de verdad: se
+//! sustituye por la misma secuencia determinista que usa el arnés (contador * 7919).
+std::vector<std::optional<u64>> run_cases_in_runtime(Compiler& compiler,
+                                                     const std::vector<Case>& cases) {
+  compiler.run_test_from_string(
+      "(define *g2c-saved-pc-rand* pc-rand)\n"
+      "(define *g2c-pc-rand-counter* 0)\n"
+      "(set! pc-rand (the-as (function int) (lambda () (set! *g2c-pc-rand-counter* (+ "
+      "*g2c-pc-rand-counter* 1)) (* *g2c-pc-rand-counter* 7919))))\n");
+  std::string goal_prog = "(begin\n";
+  for (size_t i = 0; i < cases.size(); i++) {
+    auto& c = cases[i];
+    std::string call = "(" + c.fn;
+    for (auto& a : c.goal_args) {
+      call += " " + a;
+    }
+    call += ")";
+    std::string value;
+    if (c.kind == "bool") {
+      value = fmt::format("(if {} 1 0)", call);
+    } else {
+      value = fmt::format("(the-as int {})", call);  // float -> sus bits (movd)
+    }
+    goal_prog += fmt::format("  (format #t \"G2C ~D ~D~%\" {} {})\n", i, value);
+  }
+  goal_prog += "  0)\n";
+  auto msgs = compiler.run_test_from_string(goal_prog);
+  compiler.run_test_from_string("(set! pc-rand *g2c-saved-pc-rand*)");
+  std::string text;
+  for (auto& m : msgs) {
+    text += m;
+  }
+  std::vector<std::optional<u64>> result(cases.size());
+  std::istringstream rs(text);
+  std::string tag;
+  while (rs >> tag) {
+    if (tag != "G2C") {
+      continue;
+    }
+    size_t idx;
+    s64 v;
+    rs >> idx >> v;
+    if (idx < cases.size()) {
+      result[idx] = (u64)v;
+    }
+  }
+  return result;
+}
+
+//! Salida de inspect sobre valores fijos: usa strings estáticos del segmento de depuración
+//! y llama a format (función C del kernel) desde el método inspect.
+std::string run_inspect_in_runtime(Compiler& compiler) {
+  auto msgs = compiler.run_test_from_string(
+      "(begin (inspect (the-as rgba #x04030201)) (inspect (the-as rgba #xff80407f)) 0)");
+  std::string text;
+  for (auto& m : msgs) {
+    text += m;
+  }
+  return text;
+}
+
 }  // namespace
 
 class Goal2CTests : public ::testing::Test {
@@ -180,53 +244,12 @@ TEST_F(Goal2CTests, Math) {
   file_util::write_text_file(in_file, harness_in);
 
   // 4) referencia: el mismo cálculo en el runtime, con el código x86 de goalc
-  // pc-rand es aleatoria de verdad: se sustituye por la misma secuencia determinista que usa
-  // el arnés (contador * 7919) y se restaura al final.
-  shared->compiler.run_test_from_string(
-      "(define *g2c-saved-pc-rand* pc-rand)\n"
-      "(define *g2c-pc-rand-counter* 0)\n"
-      "(set! pc-rand (the-as (function int) (lambda () (set! *g2c-pc-rand-counter* (+ "
-      "*g2c-pc-rand-counter* 1)) (* *g2c-pc-rand-counter* 7919))))\n");
-  std::string goal_prog = "(begin\n";
-  for (size_t i = 0; i < cases.size(); i++) {
-    auto& c = cases[i];
-    std::string call = "(" + c.fn;
-    for (auto& a : c.goal_args) {
-      call += " " + a;
-    }
-    call += ")";
-    std::string value;
-    if (c.kind == "bool") {
-      value = fmt::format("(if {} 1 0)", call);
-    } else {
-      value = fmt::format("(the-as int {})", call);  // float -> sus bits (movd)
-    }
-    goal_prog += fmt::format("  (format #t \"G2C ~D ~D~%\" {} {})\n", i, value);
-  }
-  goal_prog += "  0)\n";
-  auto msgs = shared->compiler.run_test_from_string(goal_prog);
-  shared->compiler.run_test_from_string("(set! pc-rand *g2c-saved-pc-rand*)");
-  std::string ref_text;
-  for (auto& m : msgs) {
-    ref_text += m;
-  }
+  auto ref_opt = run_cases_in_runtime(shared->compiler, cases);
   std::vector<u64> ref(cases.size(), 0);
   std::vector<bool> have_ref(cases.size(), false);
-  {
-    std::istringstream rs(ref_text);
-    std::string tag;
-    while (rs >> tag) {
-      if (tag != "G2C") {
-        continue;
-      }
-      size_t idx;
-      s64 v;
-      rs >> idx >> v;
-      if (idx < cases.size()) {
-        ref[idx] = (u64)v;
-        have_ref[idx] = true;
-      }
-    }
+  for (size_t i = 0; i < cases.size(); i++) {
+    have_ref[i] = ref_opt[i].has_value();
+    ref[i] = ref_opt[i].value_or(0);
   }
 
   // 5) ejecutar el arnés y comparar
@@ -303,4 +326,101 @@ TEST_F(Goal2CTests, Math) {
   }
   h += "};\n";
   file_util::write_text_file(out_dir / "math_expected.h", h);
+
+  // 7) referencia para Goal2CMixedTests (el mismo runtime con las funciones en C)
+  std::string ref_txt;
+  for (size_t i = 0; i < cases.size(); i++) {
+    ref_txt += fmt::format("{} {}\n", i, have_ref[i] ? std::to_string((s64)ref[i]) : "-");
+  }
+  file_util::write_text_file(out_dir / "math_reference.txt", ref_txt);
+  auto inspect_out = run_inspect_in_runtime(shared->compiler);
+  EXPECT_NE(inspect_out.find("rgba"), std::string::npos) << inspect_out;
+  file_util::write_text_file(out_dir / "math_inspect_reference.txt", inspect_out);
+}
+
+/*!
+ * El juego real en modo mixto: el runtime carga la librería de goal2c (GOAL2C_LIB) y, al
+ * enlazar math, sustituye sus funciones x86 por las de C. Los mismos casos se ejecutan desde
+ * GOAL (código x86 del test que llama a las funciones en C, que a su vez llaman a pc-rand y
+ * a format en el runtime) y deben dar exactamente lo mismo que con goalc.
+ * Depende de Goal2CTests.Math, que genera math.c y la referencia.
+ */
+class Goal2CMixedTests : public ::testing::Test {
+ public:
+  static void SetUpTestSuite() {
+    const auto root = file_util::get_jak_project_dir();
+    const auto out_dir = root / "out" / "goal2c" / "jak1";
+    lib_path = (out_dir / "libgoal2c_jak1.so").string();
+    auto cmd = fmt::format("python3 {} --dir {} --out {} 2>&1; echo EXIT=$?",
+                           (root / "goalc" / "c_backend" / "tools" / "build_pc_lib.py").string(),
+                           out_dir.string(), lib_path);
+    lib_build_output = run_capture(cmd);
+    setenv("GOAL2C_LIB", lib_path.c_str(), 1);
+    shared = std::make_unique<Goal2CTests::Shared>();
+    shared->compiler.run_test_no_load("test/goalc/source_templates/with_game/test-build-game.gc");
+    shared->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak1);
+    shared->compiler.run_test_from_file("test/goalc/source_templates/with_game/test-load-game.gc");
+    shared->compiler.run_test_from_string("(set! *use-old-listener-print* #t)");
+  }
+  static void TearDownTestSuite() {
+    shared->compiler.shutdown_target();
+    shared->runtime_thread.join();
+    shared.reset();
+    unsetenv("GOAL2C_LIB");
+  }
+  static std::unique_ptr<Goal2CTests::Shared> shared;
+  static std::string lib_path;
+  static std::string lib_build_output;
+};
+
+std::unique_ptr<Goal2CTests::Shared> Goal2CMixedTests::shared;
+std::string Goal2CMixedTests::lib_path;
+std::string Goal2CMixedTests::lib_build_output;
+
+TEST_F(Goal2CMixedTests, MathInGame) {
+  const auto out_dir = file_util::get_jak_project_dir() / "out" / "goal2c" / "jak1";
+  ASSERT_NE(lib_build_output.find("EXIT=0"), std::string::npos) << lib_build_output;
+  ASSERT_TRUE(fs::exists(out_dir / "math_reference.txt")) << "ejecuta antes Goal2CTests.Math";
+
+  // el objeto que transpiló goal2c es el mismo que carga el juego
+  EXPECT_EQ(file_util::read_binary_file(out_dir / "math.c.o"),
+            file_util::read_binary_file(file_util::get_jak_project_dir() / "out" / "jak1" / "obj" /
+                                        "math.o"));
+  // todas las funciones de math están en C
+  EXPECT_EQ(goal2c_runtime::replaced_functions("math"), 19);
+
+  auto cases = load_cases(file_util::get_jak_project_dir() / "test" / "goal2c" / "math_cases.txt");
+  std::vector<std::string> ref(cases.size());
+  {
+    std::istringstream rs(file_util::read_text_file(out_dir / "math_reference.txt"));
+    size_t idx;
+    std::string v;
+    while (rs >> idx >> v) {
+      if (idx < ref.size()) {
+        ref[idx] = v;
+      }
+    }
+  }
+  auto got = run_cases_in_runtime(shared->compiler, cases);
+  int bad = 0;
+  for (size_t i = 0; i < cases.size(); i++) {
+    std::string g = got[i] ? std::to_string((s64)*got[i]) : "-";
+    if (g != ref[i] || g == "-") {
+      bad++;
+      ADD_FAILURE() << fmt::format("caso {}: '{}' goalc={} juego-con-goal2c={}", i, cases[i].text,
+                                   ref[i], g);
+    }
+  }
+  lg::print("[goal2c] modo mixto: {} casos en el juego, {} difieren\n", cases.size(), bad);
+
+  auto rtrim = [](std::string x) {
+    while (!x.empty() && (x.back() == '\n' || x.back() == '\r')) {
+      x.pop_back();
+    }
+    return x;
+  };
+  auto inspect_out = run_inspect_in_runtime(shared->compiler);
+  EXPECT_EQ(rtrim(inspect_out),
+            rtrim(file_util::read_text_file(out_dir / "math_inspect_reference.txt")));
+  lg::print("[goal2c] inspect en C:\n{}\n", inspect_out);
 }

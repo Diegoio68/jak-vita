@@ -82,7 +82,7 @@ if(EXISTS "${G2C_MATH_C}" AND EXISTS "${G2C_OUT_DIR}/math_expected.h")
   target_compile_options(g2c_math32 PRIVATE ${G2C_C_FLAGS})
   target_compile_definitions(g2c_math32 PRIVATE
     G2C_GPR32 g2c_math_funcs=g2c_math_funcs32 g2c_math_link=g2c_math_link32
-    g2c_rt_symbol=g2c_rt_symbol32 g2c_rt_static=g2c_rt_static32)
+    g2c_rt_symbol=g2c_rt_symbol32 g2c_rt_static=g2c_rt_static32 g2c_math_info=g2c_math_info32)
 
   add_executable(jakvita_bench
     bench/main.cpp
@@ -90,7 +90,7 @@ if(EXISTS "${G2C_MATH_C}" AND EXISTS "${G2C_OUT_DIR}/math_expected.h")
     $<TARGET_OBJECTS:g2c_math64>
     $<TARGET_OBJECTS:g2c_math32>
   )
-  target_include_directories(jakvita_bench PRIVATE "${G2C_OUT_DIR}")
+  target_include_directories(jakvita_bench PRIVATE "${G2C_OUT_DIR}" "${G2C_RT_DIR}")
   target_link_libraries(jakvita_bench ${JAKVITA_GL_LIBS})
 
   vita_create_self(bench_eboot.bin jakvita_bench UNSAFE)

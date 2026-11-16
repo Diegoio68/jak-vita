@@ -25,12 +25,9 @@
 using jakvita::log;
 
 // ---- lo que el C generado necesita del runtime ----
+#include "goal2c_rt.h"
+
 extern "C" {
-typedef struct {
-  const char* name;
-  void* fn;
-  int nargs;
-} g2c_func_entry;
 
 extern const g2c_func_entry g2c_math_funcs[];    // variante u64
 extern const g2c_func_entry g2c_math_funcs32[];  // variante u32
@@ -90,10 +87,10 @@ uint32_t g2c_rt_symbol32(const char* name) {
   return sym_lookup(g_syms32, name);
 }
 // el bench no tiene los datos de los objetos .go: direcciones únicas sin contenido
-uint32_t g2c_rt_static(const char*, int) {
+uint32_t g2c_rt_static(const char*, int, int) {
   return goal_alloc(64);
 }
-uint32_t g2c_rt_static32(const char*, int) {
+uint32_t g2c_rt_static32(const char*, int, int) {
   return goal_alloc(64);
 }
 }
@@ -102,7 +99,9 @@ namespace {
 
 constexpr int kMemSize = 1 << 20;
 constexpr int kIters = 1000000;
-constexpr int kRepeats = 3;
+// Cada ejecución mide todas las funciones una vez, alternando u64 y u32; se informa de la
+// mediana de kRuns ejecuciones (y del rango), no del mejor tiempo.
+constexpr int kRuns = 7;
 
 // Lo que haría el código top-level de GOAL al cargar el fichero: objeto función con el
 // puntero nativo en su zona de código (convención G2C_NATIVE_FN) y guardado en su símbolo.
@@ -218,8 +217,7 @@ double bench_fn(const g2c_func_entry* table, const char* fn) {
   if (ninputs == 0) {
     return -1;
   }
-  double best = 1e30;
-  for (int rep = 0; rep < kRepeats; rep++) {
+  {
     uint64_t acc = 0;
     SceUInt64 t0 = sceKernelGetProcessTimeWide();
     // Bucle por aridad: llamada indirecta con la firma exacta, sin switch ni división
@@ -260,12 +258,9 @@ double bench_fn(const g2c_func_entry* table, const char* fn) {
 #undef G2C_BENCH_LOOP
     SceUInt64 t1 = sceKernelGetProcessTimeWide();
     g_sink = acc;
-    double ns = (double)(t1 - t0) * 1000.0 / kIters;
-    if (ns < best) {
-      best = ns;
-    }
+    return (double)(t1 - t0) * 1000.0 / kIters;
   }
-  return best;
+  return -1;
 }
 
 }  // namespace
@@ -298,17 +293,54 @@ int main() {
   const char* fns[] = {"truncate",   "log2",    "seekl",
                        "seek",       "lerp",    "lerp-clamp",
                        "lerp-scale", "rand-vu", "rand-vu-int-range"};
-  log("benchmark: %d llamadas x %d repeticiones (mejor tiempo), ns por llamada", kIters, kRepeats);
-  log("%-12s %8s %8s %7s", "funcion", "u64", "u32", "u64/u32");
-  double sum64 = 0, sum32 = 0;
-  for (auto* fn : fns) {
-    double t64 = bench_fn<uint64_t>(g2c_math_funcs, fn);
-    double t32 = bench_fn<uint32_t>(g2c_math_funcs32, fn);
-    sum64 += t64;
-    sum32 += t32;
-    log("%-12s %8.1f %8.1f %7.2f", fn, t64, t32, t32 > 0 ? t64 / t32 : 0.0);
+  constexpr int kFns = sizeof(fns) / sizeof(fns[0]);
+  log("benchmark: %d llamadas por medida, %d ejecuciones alternando u64/u32; ns por llamada "
+      "(mediana [min-max])",
+      kIters, kRuns);
+  static double t64[kFns][kRuns], t32[kFns][kRuns];
+  for (int run = 0; run < kRuns; run++) {
+    for (int f = 0; f < kFns; f++) {
+      // alterna el orden para repartir por igual la deriva (temperatura, reloj)
+      if (run % 2 == 0) {
+        t64[f][run] = bench_fn<uint64_t>(g2c_math_funcs, fns[f]);
+        t32[f][run] = bench_fn<uint32_t>(g2c_math_funcs32, fns[f]);
+      } else {
+        t32[f][run] = bench_fn<uint32_t>(g2c_math_funcs32, fns[f]);
+        t64[f][run] = bench_fn<uint64_t>(g2c_math_funcs, fns[f]);
+      }
+    }
+    log("  ejecución %d/%d terminada", run + 1, kRuns);
   }
-  log("%-12s %8.1f %8.1f %7.2f", "TOTAL", sum64, sum32, sum64 / sum32);
+  auto median = [](double* v, int n, double* lo, double* hi) {
+    double tmp[kRuns];
+    for (int i = 0; i < n; i++) {
+      tmp[i] = v[i];
+    }
+    for (int i = 1; i < n; i++) {  // ordenación por inserción (n pequeño)
+      double x = tmp[i];
+      int j = i - 1;
+      while (j >= 0 && tmp[j] > x) {
+        tmp[j + 1] = tmp[j];
+        j--;
+      }
+      tmp[j + 1] = x;
+    }
+    *lo = tmp[0];
+    *hi = tmp[n - 1];
+    return (n % 2) ? tmp[n / 2] : 0.5 * (tmp[n / 2 - 1] + tmp[n / 2]);
+  };
+  log("%-18s %22s %22s %7s", "funcion", "u64", "u32", "u64/u32");
+  double sum64 = 0, sum32 = 0;
+  for (int f = 0; f < kFns; f++) {
+    double lo64, hi64, lo32, hi32;
+    double m64 = median(t64[f], kRuns, &lo64, &hi64);
+    double m32 = median(t32[f], kRuns, &lo32, &hi32);
+    sum64 += m64;
+    sum32 += m32;
+    log("%-18s %7.1f [%5.1f-%5.1f] %7.1f [%5.1f-%5.1f] %7.2f", fns[f], m64, lo64, hi64, m32, lo32,
+        hi32, m32 > 0 ? m64 / m32 : 0.0);
+  }
+  log("%-18s %7.1f %14s %7.1f %14s %7.2f", "TOTAL (medianas)", sum64, "", sum32, "", sum64 / sum32);
   log("RESULTADO: u64 %s (%d fallos), u32 %d diferencias", bad64 == 0 ? "OK" : "FALLA", bad64,
       bad32);
 

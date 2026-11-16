@@ -231,6 +231,8 @@ class Compiler {
   SymbolVal* compile_get_sym_obj(const std::string& name, Env* env);
   void color_object_file(FileEnv* env);
   std::vector<u8> codegen_object_file(FileEnv* env);
+  // goal2c (Jak Vita): genera el objeto (para ubicar los estáticos) y escribe el C
+  void goal2c_object_file(FileEnv* env, const std::string& obj_name, const std::string& c_path);
   bool codegen_and_disassemble_object_file(FileEnv* env,
                                            std::vector<u8>* data_out,
                                            std::string* asm_out,

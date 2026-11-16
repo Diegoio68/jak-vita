@@ -78,6 +78,10 @@ class ObjectGenerator {
   void add_instr_no_ir(FunctionRecord func, Instruction inst, InstructionInfo::Kind kind);
   StaticRecord add_static_to_seg(int seg, int min_align = 16);
   std::vector<u8>& get_static_data(const StaticRecord& rec);
+  // goal2c (Jak Vita): posición final del estático dentro de su segmento (tras generar)
+  int get_static_location(const StaticRecord& rec) const {
+    return m_static_data_by_seg.at(rec.seg).at(rec.static_id).location;
+  }
   void link_instruction_jump(InstructionRecord jump_instr, IR_Record destination);
   void link_static_type_ptr(StaticRecord rec, int offset, const std::string& type_name);
 

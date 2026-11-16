@@ -24,6 +24,8 @@ class CodeGenerator {
                 emitter::InstructionSet instruction_set);
   std::vector<u8> run(const TypeSystem* ts);
   emitter::ObjectGeneratorStats get_obj_stats() const { return m_gen.get_stats(); }
+  // goal2c (Jak Vita): acceso al generador tras run(), para la ubicación de los estáticos
+  const emitter::ObjectGenerator& object_generator() const { return m_gen; }
 
  private:
   void do_function(FunctionEnv* env, int f_idx);

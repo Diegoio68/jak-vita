@@ -336,6 +336,39 @@ std::vector<u8> Compiler::codegen_object_file(FileEnv* env) {
   return {};
 }
 
+/*!
+ * goal2c (Jak Vita): traduce un FileEnv a C.
+ * Primero hace register allocation + codegen como para un .o normal: el C no lo necesita,
+ * pero así se conoce la posición final de cada estático en su segmento, que el C usa para
+ * encontrarlos en el objeto cargado. El objeto generado se escribe junto al C (<c>.o) para
+ * poder comprobar que es idéntico al que carga el juego.
+ */
+void Compiler::goal2c_object_file(FileEnv* env,
+                                  const std::string& obj_name,
+                                  const std::string& c_path) {
+  color_object_file(env);
+  auto debug_info = &m_debugger.get_debug_info_for_object(env->name());
+  debug_info->clear();
+  CodeGenerator gen(env, debug_info, m_version, m_instr_set);
+  auto data = gen.run(&m_ts);
+
+  goal2c::StaticLocations locs;
+  for (auto& st : env->statics()) {
+    locs[st.get()] = {st->rec.seg, gen.object_generator().get_static_location(st->rec)};
+  }
+  auto res = goal2c::emit_file(env, obj_name, locs, data);
+  env->cleanup_after_codegen();
+
+  file_util::create_dir_if_needed_for_file(c_path);
+  file_util::write_text_file(c_path, res.c_source);
+  file_util::write_binary_file(c_path + ".o", data.data(), data.size());
+  lg::print("[goal2c] {}: {} funciones traducidas, {} sin traducir -> {}\n", obj_name,
+            res.translated.size(), res.skipped.size(), c_path);
+  for (auto& s : res.skipped) {
+    lg::print("[goal2c]   sin traducir: {}\n", s);
+  }
+}
+
 bool Compiler::codegen_and_disassemble_object_file(FileEnv* env,
                                                    std::vector<u8>* data_out,
                                                    std::string* asm_out,
@@ -493,16 +526,11 @@ void Compiler::asm_file(const CompilationOptions& options) {
   // COMPILE
   auto obj_file = compile_object_file(obj_file_name, code, !options.no_code);
 
-  // goal2c (Jak Vita): IR -> C, antes del register allocator
+  // goal2c (Jak Vita): IR -> C. Es un modo exclusivo: genera el objeto (para conocer la
+  // ubicación de los estáticos) y el C, y no hace nada más con este fichero.
   if (!options.goal2c_output_file.empty()) {
-    auto res = goal2c::emit_file(obj_file, obj_file_name);
-    file_util::create_dir_if_needed_for_file(options.goal2c_output_file);
-    file_util::write_text_file(options.goal2c_output_file, res.c_source);
-    lg::print("[goal2c] {}: {} funciones traducidas, {} sin traducir -> {}\n", obj_file_name,
-              res.translated.size(), res.skipped.size(), options.goal2c_output_file);
-    for (auto& s : res.skipped) {
-      lg::print("[goal2c]   sin traducir: {}\n", s);
-    }
+    goal2c_object_file(obj_file, obj_file_name, options.goal2c_output_file);
+    return;
   }
 
   if (options.color) {
