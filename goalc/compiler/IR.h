@@ -444,6 +444,7 @@ class IR_GetStackAddr : public IR {
   void do_codegen_arm64(emitter::ObjectGenerator* gen,
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
+  void do_codegen_c(goal2c::CFunctionWriter& w) override;
 
  private:
   const RegVal* m_dest = nullptr;

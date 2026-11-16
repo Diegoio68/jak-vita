@@ -1,0 +1,101 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/math/matrix.gc (goalc x86 frente a goal2c en el juego).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+
+(define *g2c-m1* (new 'global 'matrix))
+(define *g2c-m2* (new 'global 'matrix))
+(define *g2c-mo* (new 'global 'matrix))
+(define *g2c-mv* (new 'global 'vector))
+(define *g2c-mvo* (new 'global 'vector))
+(define *g2c-mva* (new 'global 'inline-array 'vector 3))
+(define *g2c-mvb* (new 'global 'inline-array 'vector 3))
+
+(defun g2c-mreset ()
+  "entradas fijas: m1 = rotación + traslación + algo de escala, m2 = matriz general"
+  (g2c-setm! *g2c-m1*
+             0.8 0.0 -0.6 0.0
+             0.0 2.0 0.0 0.0
+             0.6 0.0 0.8 0.0
+             10.0 -5.0 3.0 1.0)
+  (g2c-setm! *g2c-m2*
+             1.5 -2.0 0.25 3.0
+             4.0 0.5 -1.0 0.0
+             -0.75 2.5 6.0 1.0
+             2.0 1.0 -3.0 0.5)
+  (g2c-setm! *g2c-mo*
+             99.0 99.0 99.0 99.0 99.0 99.0 99.0 99.0
+             99.0 99.0 99.0 99.0 99.0 99.0 99.0 99.0)
+  (g2c-set! *g2c-mv* 1.0 -2.0 0.5 1.0)
+  (g2c-set! *g2c-mvo* 77.0 77.0 77.0 77.0)
+  0)
+
+(defun g2c-matrix-cases ()
+  (let ((a *g2c-m1*) (b *g2c-m2*) (o *g2c-mo*) (v *g2c-mv*) (vo *g2c-mvo*))
+    (g2c-mreset) (g2c-pm "identity" (matrix-identity! o))
+    (g2c-mreset) (g2c-pm "+" (matrix+! o a b))
+    (g2c-mreset) (g2c-pm "-" (matrix-! o a b))
+    (g2c-mreset) (g2c-pm "*" (matrix*! o a b))
+    (g2c-mreset) (g2c-pm "*-alias" (matrix*! a a b))
+    (g2c-mreset) (g2c-pm "p*" (matrixp*! o a b))
+    (g2c-mreset) (g2c-pm "p*-alias" (matrixp*! a a b))
+    (g2c-mreset) (g2c-pv "vector-matrix*" (vector-matrix*! vo v b))
+    (g2c-mreset) (g2c-pv "vector-rotate*" (vector-rotate*! vo v b))
+    (g2c-mreset) (g2c-pv "vector3s-matrix*" (vector3s-matrix*! (the-as vector3s vo) (the-as vector3s v) b))
+    (g2c-mreset) (g2c-pv "vector3s-rotate*" (vector3s-rotate*! (the-as vector3s vo) (the-as vector3s v) b))
+    (g2c-mreset) (g2c-pm "transpose" (matrix-transpose! o b))
+    (g2c-mreset) (g2c-pm "inverse-rot-trans" (matrix-inverse-of-rot-trans! o a))
+    (g2c-mreset) (g2c-pm "4x4-inverse" (matrix-4x4-inverse! o b))
+    (g2c-mreset) (g2c-pm "translate" (matrix-translate! o v))
+    (g2c-mreset) (g2c-pm "translate+" (matrix-translate+! o b v))
+    (g2c-mreset) (g2c-pm "translate+-alias" (matrix-translate+! b b v))
+    (g2c-mreset) (g2c-pm "scale" (matrix-scale! o v))
+    (g2c-mreset) (g2c-pm "scale-matrix" (scale-matrix! o v b))
+    (g2c-mreset) (g2c-pm "inv-scale" (matrix-inv-scale! o v))
+    (g2c-mreset) (g2c-pm "column-scale" (column-scale-matrix! o v b))
+    (g2c-mreset) (g2c-pm "rotate-x" (matrix-rotate-x! o 8192.0))
+    (g2c-mreset) (g2c-pm "rotate-y" (matrix-rotate-y! o -12000.0))
+    (g2c-mreset) (g2c-pm "rotate-z" (matrix-rotate-z! o 30000.0))
+    (g2c-set! v 1000.0 -20000.0 7000.0 1.0)
+    (g2c-pm "rotate-zyx" (matrix-rotate-zyx! o v))
+    (g2c-pm "rotate-xyz" (matrix-rotate-xyz! o v))
+    (g2c-pm "rotate-zxy" (matrix-rotate-zxy! o v))
+    (g2c-pm "rotate-yxz" (matrix-rotate-yxz! o v))
+    (g2c-pm "rotate-yzx" (matrix-rotate-yzx! o v))
+    (g2c-pm "rotate-yxy" (matrix-rotate-yxy! o v))
+    (g2c-pm "rotate-yx" (matrix-rotate-yx! o 5000.0 -9000.0))
+    (g2c-mreset) (g2c-set! v 0.0 0.6 0.8 0.0)
+    (g2c-pm "axis-sin-cos" (matrix-axis-sin-cos! o v 0.5 0.8660254))
+    ;; matrix-axis-sin-cos-vu! NO se prueba: el juego no la usa y OpenGOAL la dejó como (/ 0 0),
+    ;; que en x86 es una división entera por cero (SIGFPE) a propósito.
+    ;; matrix-axis-angle! devuelve none: se imprime la matriz que escribe
+    (g2c-mreset) (g2c-set! v 0.0 0.6 0.8 0.0)
+    (matrix-axis-angle! o v 10000.0) (g2c-pm "axis-angle" o)
+    (g2c-mreset) (g2c-pm "lerp" (matrix-lerp! o a b 0.3))
+    (g2c-mreset) (g2c-pf "3x3-det" (matrix-3x3-determinant b))
+    (g2c-mreset) (g2c-pf "matrix3-det" (matrix3-determinant b))
+    (g2c-mreset) (g2c-pm "3x3-inverse" (matrix-3x3-inverse! o b))
+    (g2c-mreset) (g2c-pm "3x3-inverse-transpose" (matrix-3x3-inverse-transpose! o b))
+    (g2c-mreset) (g2c-pm "matrix3-inverse-transpose" (matrix3-inverse-transpose! o b))
+    (g2c-mreset) (g2c-pf "4x4-det" (matrix-4x4-determinant b))
+    (g2c-mreset) (g2c-pm "4x4-inverse-transpose" (matrix-4x4-inverse-transpose! o b))
+    (g2c-mreset) (g2c-pf "y-angle" (matrix-y-angle a))
+    ;; matriz singular: divisiones por cero en las inversas
+    (g2c-setm! b 1.0 2.0 3.0 0.0 2.0 4.0 6.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 1.0)
+    (g2c-pm "3x3-inverse-singular" (matrix-3x3-inverse! o b))
+    ;; método transform-vectors! sobre 3 vectores
+    (g2c-mreset)
+    (g2c-set! (-> *g2c-mva* 0) 1.0 2.0 3.0 1.0)
+    (g2c-set! (-> *g2c-mva* 1) -1.0 0.5 0.0 1.0)
+    (g2c-set! (-> *g2c-mva* 2) 0.0 0.0 -4.0 1.0)
+    (transform-vectors! b *g2c-mvb* *g2c-mva* 3)
+    (g2c-pv "transform-vectors" (-> *g2c-mvb* 0))
+    (g2c-pv "transform-vectors" (-> *g2c-mvb* 1))
+    (g2c-pv "transform-vectors" (-> *g2c-mvb* 2))
+    ;; matrices en la pila (dirección GOAL de 64 bits en el PC si la pila es la nativa)
+    (let ((sa (new 'stack-no-clear 'matrix))
+          (so (new 'stack-no-clear 'matrix)))
+      (matrix-copy! sa *g2c-m2*)
+      (g2c-pm "stack-4x4-inverse" (matrix-4x4-inverse! so sa))))
+  0)
+
+(g2c-matrix-cases)

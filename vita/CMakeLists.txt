@@ -70,7 +70,9 @@ set(G2C_OUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../out/goal2c/jak1" CACHE PATH "sal
 set(G2C_MATH_C "${G2C_OUT_DIR}/math.c")
 if(EXISTS "${G2C_MATH_C}" AND EXISTS "${G2C_OUT_DIR}/math_expected.h")
   set(G2C_RT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../goalc/c_backend/runtime")
-  set(G2C_C_FLAGS -std=c11 -O2 -Wall -Wextra -Werror)
+  # funciones alineadas a 64 bytes (línea de caché): reduce la variación entre builds por
+  # la colocación del código, que en la Vita llegó a ±40 % con el mismo C
+  set(G2C_C_FLAGS -std=c11 -O2 -Wall -Wextra -Werror -falign-functions=64)
 
   # el mismo fichero generado, compilado dos veces
   add_library(g2c_math64 OBJECT "${G2C_MATH_C}")

@@ -109,10 +109,21 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - Runtime: game/goal2c/goal2c_jak1.cpp, enganchado en klink.cpp DESPUÉS del top-level.
   x86->C: objeto función que guarda r13 (pp) y salta a _arg_call_systemv. C->x86:
   _call_goal8_asm_systemv. Solo Linux x86-64.
-- Tests: Goal2CTests.{Math,Vector} (referencia goalc) y Goal2CMixedTests.{MathInGame,
-  VectorInGame} (lo mismo en el juego con las funciones en C):
+- Tests: Goal2CTests.<Fichero> (transpila + referencia goalc) y
+  Goal2CMixedTests.<Fichero>InGame (lo mismo en el juego con las funciones en C):
   `build/goalc-test --gtest_filter='Goal2C*'`. Casos: test/goal2c/math_cases.txt y
-  test/goal2c/vector_cases.gc (salida en bits, se compara texto exacto).
+  test/goal2c/<obj>_cases.gc, a los que el test antepone test/goal2c/cases_prelude.gc
+  (macros de impresión en bits, pc-rand determinista). Se compara el texto exacto.
+- Añadir un fichero validado: tabla kGameFiles en test/goalc/test_goal2c.cpp + su
+  <obj>_cases.gc + dos TEST_F de una línea. No imprimir direcciones de objetos (inspect/print
+  de objetos del heap) y no llamar a funciones que el juego no usa: algunas son trampas a
+  propósito (matrix-axis-sin-cos-vu! hace (/ 0 0) -> SIGFPE en x86). El test instala un
+  manejador de SIGFPE que dice el offset EE; con las líneas "[link and exec] ... : 0x..." del
+  log se encuentra el objeto.
+- Variables de pila de GOAL (new 'stack...): IR_GetStackAddr -> array local alineado a 16
+  por función (g2c_stk); dirección GOAL = dirección real - g2c_mem.
+- Validados en el juego (2026-11-16): math 19, vector 68, matrix 43, transform 5,
+  quaternion 52/53 (quaternion-validate lee pp con with-pp; pendiente de soportar pp).
 - OBLIGATORIO además: `test/goal2c/boot_smoke.sh` (juego real sin ventana 45 s con la
   librería; exige que no falle, que instale funciones y que avance tras cargar el nivel).
   Los tests de goalc-test NO ejecutan código en la pila x86 nativa; el juego sí.
@@ -153,7 +164,8 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   Logs: build-vita/bench_fase1_sin_llamadas.txt y build-vita/bench.txt (no versionados).
   Medianas (7 ejecuciones, Vita real): total +18 %; rango dentro de un build < 2 %, pero
   entre builds el mismo C varía hasta ±40 % por colocación del código (lerp-clamp u32 60 ->
-  87 ns). Próximo benchmark: compilar con -falign-functions=64 para reducirlo.
+  87 ns). Desde 2026-11-16 vita/bench compila el C generado con -falign-functions=64
+  (comprobado: todas las funciones empiezan en múltiplos de 64) para reducirlo.
 
 ## Fases
 0. Fork compila en PC; extractor corre con el ISO de Jak 1. Hello world vitaGL en Vita.

@@ -1,0 +1,42 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/math/transform.gc (goalc x86 frente a goal2c en el juego).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+;; No se prueba el método print de transform: imprime la dirección del objeto.
+
+(define *g2c-tf* (new 'global 'transform))
+(define *g2c-trs* (new 'global 'trs))
+(define *g2c-tm* (new 'global 'matrix))
+(define *g2c-tv* (new 'global 'vector))
+
+(defun g2c-treset ()
+  (g2c-set! (-> *g2c-tf* trans) 10.0 -2.0 5.5 1.0)
+  (g2c-set! (-> *g2c-tf* rot) 4000.0 -11000.0 25000.0 1.0)
+  (g2c-set! (-> *g2c-tf* scale) 1.0 2.0 0.5 1.0)
+  (g2c-set! (-> *g2c-trs* trans) -3.0 7.0 0.25 1.0)
+  (g2c-set! (-> *g2c-trs* rot) -9000.0 500.0 16384.0 1.0)
+  (g2c-set! (-> *g2c-trs* scale) 0.75 0.75 3.0 1.0)
+  (g2c-set! *g2c-tv* 2.0 4.0 0.5 1.0)
+  (g2c-setm! *g2c-tm*
+             99.0 99.0 99.0 99.0 99.0 99.0 99.0 99.0
+             99.0 99.0 99.0 99.0 99.0 99.0 99.0 99.0)
+  0)
+
+(defun g2c-transform-cases ()
+  (g2c-treset) (g2c-pm "matrix-calc" (transform-matrix-calc! *g2c-tf* *g2c-tm*))
+  (g2c-treset) (g2c-pm "parent-calc" (transform-matrix-parent-calc! *g2c-tf* *g2c-tm* *g2c-tv*))
+  (g2c-treset) (g2c-pm "trs-calc" (trs-matrix-calc! *g2c-trs* *g2c-tm*))
+  ;; ángulos grandes y escala cero
+  (g2c-treset)
+  (g2c-set! (-> *g2c-tf* rot) 70000.0 -70000.0 0.0 1.0)
+  (g2c-set! (-> *g2c-tf* scale) 0.0 1.0 -1.0 1.0)
+  (g2c-pm "matrix-calc-2" (transform-matrix-calc! *g2c-tf* *g2c-tm*))
+  ;; transform en la pila
+  (let ((st (new 'stack-no-clear 'transform))
+        (sm (new 'stack-no-clear 'matrix)))
+    (g2c-set! (-> st trans) 1.0 2.0 3.0 1.0)
+    (g2c-set! (-> st rot) 1234.0 5678.0 -910.0 1.0)
+    (g2c-set! (-> st scale) 2.0 2.0 2.0 1.0)
+    (g2c-pm "stack-matrix-calc" (transform-matrix-calc! st sm)))
+  0)
+
+(g2c-transform-cases)

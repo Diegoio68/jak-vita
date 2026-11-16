@@ -13,12 +13,16 @@
  *
  * Ejecutar: build/goalc-test --gtest_filter='Goal2CTests.*'
  */
+#include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <dlfcn.h>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <ucontext.h>
+#include <unistd.h>
 #include <vector>
 
 #include "common/util/FileUtil.h"
@@ -175,9 +179,35 @@ std::string run_inspect_in_runtime(Compiler& compiler) {
 
 }  // namespace
 
+//! Diagnóstico: si el runtime muere por SIGFPE, decir dónde (y si es división entera).
+void g2c_fpe_handler(int sig, siginfo_t* info, void* vctx) {
+  auto* uc = (ucontext_t*)vctx;
+  void* rip = (void*)uc->uc_mcontext.gregs[REG_RIP];
+  Dl_info d{};
+  char buf[512];
+  int n;
+  if (dladdr(rip, &d) && d.dli_fname) {
+    n = snprintf(buf, sizeof(buf),
+                 "[goal2c] SIGFPE code=%d (1=div entera) en %p (%s + 0x%lx, %s)\n", info->si_code,
+                 rip, d.dli_fname, (unsigned long)((u8*)rip - (u8*)d.dli_fbase),
+                 d.dli_sname ? d.dli_sname : "?");
+  } else {
+    n = snprintf(buf, sizeof(buf),
+                 "[goal2c] SIGFPE code=%d (1=div entera) en %p (código GOAL, offset EE 0x%lx)\n",
+                 info->si_code, rip, (unsigned long)((u8*)rip - g_ee_main_mem));
+  }
+  (void)!write(2, buf, (size_t)n);
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
 class Goal2CTests : public ::testing::Test {
  public:
   static void SetUpTestSuite() {
+    struct sigaction sa{};
+    sa.sa_sigaction = g2c_fpe_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigaction(SIGFPE, &sa, nullptr);
     shared = std::make_unique<Shared>();
     shared->compiler.run_test_no_load("test/goalc/source_templates/with_game/test-build-game.gc");
     shared->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak1);
@@ -350,23 +380,61 @@ std::string join_output(const std::vector<std::string>& msgs) {
   return text;
 }
 
-TEST_F(Goal2CTests, Vector) {
-  const auto out_dir = file_util::get_jak_project_dir() / "out" / "goal2c" / "jak1";
-  const auto c_file = out_dir / "vector.c";
-  shared->compiler.run_front_end_on_string(fmt::format(
-      "(asm-file \"goal_src/jak1/engine/math/vector.gc\" :goal2c \"{}\")", c_file.string()));
+//! Ejecuta en el runtime un fichero de casos (test/goal2c/<nombre>_cases.gc) precedido del
+//! preludio común y seguido de la restauración de pc-rand. Devuelve la salida de texto.
+std::string run_cases_file(Compiler& compiler, const std::string& name) {
+  const auto dir = file_util::get_jak_project_dir() / "test" / "goal2c";
+  std::string src = file_util::read_text_file(dir / "cases_prelude.gc") + "\n" +
+                    file_util::read_text_file(dir / (name + "_cases.gc")) + "\n" +
+                    "(set! pc-rand *g2c-saved-pc-rand*)\n";
+  return join_output(compiler.run_test_from_string(src, "g2c-" + name + "-cases"));
+}
+
+//! Ficheros validados en el juego: objeto, fuente GOAL y un texto que debe salir en los casos.
+struct Goal2CFile {
+  const char* obj;
+  const char* src;
+  const char* marker;
+};
+const Goal2CFile kGameFiles[] = {
+    {"vector", "goal_src/jak1/engine/math/vector.gc", "\"cross\" "},
+    {"matrix", "goal_src/jak1/engine/math/matrix.gc", "\"4x4-inverse\" "},
+    {"transform", "goal_src/jak1/engine/math/transform.gc", "\"matrix-calc\" "},
+    {"quaternion", "goal_src/jak1/engine/math/quaternion.gc", "\"slerp\" "},
+};
+
+//! Transpila el fichero, comprueba que su C compila limpio y guarda la referencia de goalc
+//! (los casos ejecutados con el código x86 de goalc) en out/goal2c/jak1/<obj>_reference.txt.
+void transpile_and_reference(Compiler& compiler, const Goal2CFile& f) {
+  const auto root = file_util::get_jak_project_dir();
+  const auto out_dir = root / "out" / "goal2c" / "jak1";
+  const auto c_file = out_dir / (std::string(f.obj) + ".c");
+  compiler.run_front_end_on_string(
+      fmt::format("(asm-file \"{}\" :goal2c \"{}\")", f.src, c_file.string()));
   ASSERT_TRUE(fs::exists(c_file));
   // el C debe compilar limpio (también como código de la Vita, sin modo mixto)
   auto out = run_capture(
       fmt::format("cc -std=c11 -O2 -Wall -Wextra -Werror -c -I{} {} -o {} 2>&1; echo EXIT=$?",
-                  (file_util::get_jak_project_dir() / "goalc" / "c_backend" / "runtime").string(),
-                  c_file.string(), (out_dir / "vector_check.o").string()));
+                  (root / "goalc" / "c_backend" / "runtime").string(), c_file.string(),
+                  (out_dir / (std::string(f.obj) + "_check.o")).string()));
   EXPECT_NE(out.find("EXIT=0"), std::string::npos) << out;
 
-  // referencia: los casos con el código x86 de goalc
-  auto ref = join_output(shared->compiler.run_test_from_file("test/goal2c/vector_cases.gc"));
-  EXPECT_NE(ref.find("\"cross\" "), std::string::npos) << ref;
-  file_util::write_text_file(out_dir / "vector_reference.txt", ref);
+  auto ref = run_cases_file(compiler, f.obj);
+  EXPECT_NE(ref.find(f.marker), std::string::npos) << ref;
+  file_util::write_text_file(out_dir / (std::string(f.obj) + "_reference.txt"), ref);
+}
+
+TEST_F(Goal2CTests, Vector) {
+  transpile_and_reference(shared->compiler, kGameFiles[0]);
+}
+TEST_F(Goal2CTests, Matrix) {
+  transpile_and_reference(shared->compiler, kGameFiles[1]);
+}
+TEST_F(Goal2CTests, Transform) {
+  transpile_and_reference(shared->compiler, kGameFiles[2]);
+}
+TEST_F(Goal2CTests, Quaternion) {
+  transpile_and_reference(shared->compiler, kGameFiles[3]);
 }
 
 /*!
@@ -456,23 +524,26 @@ TEST_F(Goal2CMixedTests, MathInGame) {
   lg::print("[goal2c] inspect en C:\n{}\n", inspect_out);
 }
 
-TEST_F(Goal2CMixedTests, VectorInGame) {
+//! El fichero en el juego en modo mixto: objeto idéntico al transpilado, funciones instaladas
+//! en C y los mismos casos con la misma salida, línea a línea, que con goalc.
+void compare_in_game(Compiler& compiler, const std::string& lib_build_output, const Goal2CFile& f) {
   const auto root = file_util::get_jak_project_dir();
   const auto out_dir = root / "out" / "goal2c" / "jak1";
+  const std::string obj = f.obj;
   ASSERT_NE(lib_build_output.find("EXIT=0"), std::string::npos) << lib_build_output;
-  ASSERT_TRUE(fs::exists(out_dir / "vector_reference.txt")) << "ejecuta antes Goal2CTests.Vector";
-  EXPECT_EQ(file_util::read_binary_file(out_dir / "vector.c.o"),
-            file_util::read_binary_file(root / "out" / "jak1" / "obj" / "vector.o"));
-  int replaced = goal2c_runtime::replaced_functions("vector");
+  ASSERT_TRUE(fs::exists(out_dir / (obj + "_reference.txt")))
+      << "ejecuta antes Goal2CTests (genera la referencia de " << obj << ")";
+  EXPECT_EQ(file_util::read_binary_file(out_dir / (obj + ".c.o")),
+            file_util::read_binary_file(root / "out" / "jak1" / "obj" / (obj + ".o")));
+  int replaced = goal2c_runtime::replaced_functions(obj.c_str());
   EXPECT_GT(replaced, 0);
-  lg::print("[goal2c] vector: {} funciones en C dentro del juego\n", replaced);
+  lg::print("[goal2c] {}: {} funciones en C dentro del juego\n", obj, replaced);
 
-  auto got = join_output(shared->compiler.run_test_from_file("test/goal2c/vector_cases.gc"));
-  auto ref = file_util::read_text_file(out_dir / "vector_reference.txt");
+  auto got = run_cases_file(compiler, obj);
+  auto ref = file_util::read_text_file(out_dir / (obj + "_reference.txt"));
   while (!ref.empty() && (ref.back() == '\n' || ref.back() == '\r')) {
     ref.pop_back();
   }
-  // comparación línea a línea, para que el fallo diga qué caso es
   std::istringstream gs(got), rs(ref);
   std::string gl, rl;
   int line = 0, bad = 0;
@@ -485,8 +556,22 @@ TEST_F(Goal2CMixedTests, VectorInGame) {
     line++;
     if (gl != rl || g_ok != r_ok) {
       bad++;
-      ADD_FAILURE() << fmt::format("línea {}: goalc='{}' juego-con-goal2c='{}'", line, rl, gl);
+      ADD_FAILURE() << fmt::format("{} línea {}: goalc='{}' juego-con-goal2c='{}'", obj, line, rl,
+                                   gl);
     }
   }
-  lg::print("[goal2c] vector en el juego: {} líneas comparadas, {} difieren\n", line, bad);
+  lg::print("[goal2c] {} en el juego: {} líneas comparadas, {} difieren\n", obj, line, bad);
+}
+
+TEST_F(Goal2CMixedTests, VectorInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[0]);
+}
+TEST_F(Goal2CMixedTests, MatrixInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[1]);
+}
+TEST_F(Goal2CMixedTests, TransformInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[2]);
+}
+TEST_F(Goal2CMixedTests, QuaternionInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[3]);
 }

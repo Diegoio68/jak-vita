@@ -2,29 +2,7 @@
 ;; goal2c (Jak Vita): casos de engine/math/vector.gc para comparar goalc (x86) con goal2c (C).
 ;; test/goalc/test_goal2c.cpp lo ejecuta en el runtime dos veces: con las funciones de goalc y
 ;; con el juego en modo mixto (funciones en C). La salida de texto debe ser IDÉNTICA.
-;; Todo se imprime como patrones de bits (~X), así que se compara bit a bit, NaN incluidos.
-
-(defmacro g2c-bits (f)
-  `(the-as int ,f))
-
-(defmacro g2c-pv (tag v)
-  "imprime un vector como 4 patrones de bits"
-  `(let ((g2c-v ,v))
-     (format #t "~A ~X ~X ~X ~X~%" ,tag
-             (g2c-bits (-> g2c-v x)) (g2c-bits (-> g2c-v y))
-             (g2c-bits (-> g2c-v z)) (g2c-bits (-> g2c-v w)))))
-
-(defmacro g2c-pf (tag f)
-  `(format #t "~A ~X~%" ,tag (g2c-bits ,f)))
-
-(defmacro g2c-pi (tag i)
-  `(format #t "~A ~D~%" ,tag ,i))
-
-(defmacro g2c-pb (tag b)
-  `(format #t "~A ~A~%" ,tag (if ,b 'si 'no)))
-
-(defmacro g2c-set! (v x y z w)
-  `(begin (set! (-> ,v x) ,x) (set! (-> ,v y) ,y) (set! (-> ,v z) ,z) (set! (-> ,v w) ,w) ,v))
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Se compara bit a bit, NaN incluidos.
 
 (define *g2c-a* (new 'global 'vector))
 (define *g2c-b* (new 'global 'vector))
@@ -40,13 +18,6 @@
   (g2c-set! *g2c-c* 0.001 -1000.0 3.5 2.0)
   (g2c-set! *g2c-o* 123.0 456.0 789.0 -1.0)
   0)
-
-;; pc-rand determinista (la misma secuencia que en los casos de math)
-(define *g2c-saved-pc-rand* pc-rand)
-(define *g2c-pc-rand-counter* 0)
-(set! pc-rand (the-as (function int)
-                      (lambda () (set! *g2c-pc-rand-counter* (+ *g2c-pc-rand-counter* 1))
-                                 (* *g2c-pc-rand-counter* 7919))))
 
 (defun g2c-vector-cases ()
   (let ((a *g2c-a*) (b *g2c-b*) (c *g2c-c*) (o *g2c-o*))
@@ -147,4 +118,3 @@
   0)
 
 (g2c-vector-cases)
-(set! pc-rand *g2c-saved-pc-rand*)

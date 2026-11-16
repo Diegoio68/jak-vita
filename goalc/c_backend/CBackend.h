@@ -69,6 +69,8 @@ class CFunctionWriter {
   const RegVal* return_reg = nullptr;
   //! Parámetros, en orden (los fija el IR_ValueReset inicial).
   std::vector<const RegVal*> params;
+  //! Dirección GOAL del hueco de pila slot (variables 'stack de GOAL). Reserva el área.
+  std::string stack_addr(int slot);
 
   //! Genera el texto completo de la función.
   std::string finish(const std::string& c_name);
@@ -78,6 +80,7 @@ class CFunctionWriter {
   FileState* m_file;
   std::map<int, std::string> m_vars;  // ireg id -> tipo C
   std::set<int> m_label_targets;
+  bool m_uses_stack = false;
   // cuerpo: (índice IR, texto)
   std::vector<std::pair<int, std::string>> m_body;
 };

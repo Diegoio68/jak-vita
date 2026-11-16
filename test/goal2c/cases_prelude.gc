@@ -1,0 +1,53 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): preludio común de los casos *_cases.gc. test/goalc/test_goal2c.cpp lo
+;; antepone a cada fichero de casos y añade al final la restauración de pc-rand.
+;; Todo se imprime como patrones de bits (~X): la comparación goalc/goal2c es bit a bit.
+;; No imprimir direcciones de objetos (inspect/print de objetos del heap): cambian entre runtimes.
+
+(defmacro g2c-bits (f)
+  `(the-as int ,f))
+
+(defmacro g2c-pv (tag v)
+  "imprime un vector (o quaternion) como 4 patrones de bits"
+  `(let ((g2c-v (the-as vector ,v)))
+     (format #t "~A ~X ~X ~X ~X~%" ,tag
+             (g2c-bits (-> g2c-v x)) (g2c-bits (-> g2c-v y))
+             (g2c-bits (-> g2c-v z)) (g2c-bits (-> g2c-v w)))))
+
+(defmacro g2c-pm (tag m)
+  "imprime una matriz fila a fila"
+  `(let ((g2c-m (the-as matrix ,m)))
+     (g2c-pv ,tag (-> g2c-m vector 0))
+     (g2c-pv ,tag (-> g2c-m vector 1))
+     (g2c-pv ,tag (-> g2c-m vector 2))
+     (g2c-pv ,tag (-> g2c-m vector 3))))
+
+(defmacro g2c-pf (tag f)
+  `(format #t "~A ~X~%" ,tag (g2c-bits ,f)))
+
+(defmacro g2c-pi (tag i)
+  `(format #t "~A ~D~%" ,tag ,i))
+
+(defmacro g2c-pb (tag b)
+  `(format #t "~A ~A~%" ,tag (if ,b 'si 'no)))
+
+(defmacro g2c-set! (v x y z w)
+  `(let ((g2c-sv (the-as vector ,v)))
+     (set! (-> g2c-sv x) ,x) (set! (-> g2c-sv y) ,y) (set! (-> g2c-sv z) ,z) (set! (-> g2c-sv w) ,w)
+     ,v))
+
+(defmacro g2c-setm! (m a b c d e f g h i j k l n o p q)
+  "rellena una matriz por filas"
+  `(let ((g2c-sm (the-as matrix ,m)))
+     (g2c-set! (-> g2c-sm vector 0) ,a ,b ,c ,d)
+     (g2c-set! (-> g2c-sm vector 1) ,e ,f ,g ,h)
+     (g2c-set! (-> g2c-sm vector 2) ,i ,j ,k ,l)
+     (g2c-set! (-> g2c-sm vector 3) ,n ,o ,p ,q)
+     ,m))
+
+;; pc-rand determinista (la misma secuencia que en los casos de math)
+(define *g2c-saved-pc-rand* pc-rand)
+(define *g2c-pc-rand-counter* 0)
+(set! pc-rand (the-as (function int)
+                      (lambda () (set! *g2c-pc-rand-counter* (+ *g2c-pc-rand-counter* 1))
+                                 (* *g2c-pc-rand-counter* 7919))))

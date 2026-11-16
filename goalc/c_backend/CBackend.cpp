@@ -162,6 +162,13 @@ std::string CFunctionWriter::static_addr(const StaticObject* obj) {
                      escape_c_comment(obj->print()));
 }
 
+std::string CFunctionWriter::stack_addr(int slot) {
+  m_uses_stack = true;
+  // goalc x86: rsp + 8 * slot - r15. Aquí el área de pila es un array local alineado a 16 (como
+  // la pila de goalc), y la dirección GOAL es su dirección real menos la base.
+  return fmt::format("(g2c_gpr)((uintptr_t)(g2c_stk + {}) - (uintptr_t)g2c_mem)", slot * 8);
+}
+
 void CFunctionWriter::line(const std::string& text) {
   m_body.emplace_back(current_ir, text);
 }
@@ -223,6 +230,10 @@ std::string CFunctionWriter::finish(const std::string& c_name) {
   }
   out += ") {\n";
 
+  if (m_uses_stack) {
+    int bytes = std::max(16, m_env->stack_slots_used_for_stack_vars() * 8);
+    out += fmt::format("  uint8_t g2c_stk[{}] __attribute__((aligned(16)));\n", bytes);
+  }
   // declaraciones (todas al principio: los goto no pueden saltarse inicializaciones)
   for (auto& [id, t] : m_vars) {
     out += fmt::format("  {} {}{} = {};\n", t, var_prefix(t), id, t == "g2c_q" ? "{{0}}" : "0");
@@ -454,10 +465,17 @@ void IR_LoadConstant64::do_codegen_c(CFunctionWriter& w) {
 }
 
 void IR_LoadSymbolPointer::do_codegen_c(CFunctionWriter& w) {
-  if (!w.is_gpr(m_dest)) {
-    unsupported("puntero a símbolo en registro no GPR");
+  auto sym = w.symbol(m_name);
+  if (w.is_gpr(m_dest)) {
+    w.line(fmt::format("{} = {};", w.var(m_dest), sym));
+  } else if (w.is_float(m_dest)) {
+    // goalc x86 (solo #f): movq xmm, s7 -> los 32 bits bajos como float
+    w.line(fmt::format("{} = g2c_bits_to_f((uint32_t){});", w.var(m_dest), sym));
+  } else if (w.is_q(m_dest)) {
+    w.line(fmt::format("{} = g2c_q_from_gpr({});", w.var(m_dest), sym));
+  } else {
+    unsupported("puntero a símbolo en registro de clase desconocida");
   }
-  w.line(fmt::format("{} = {};", w.var(m_dest), w.symbol(m_name)));
 }
 
 void IR_GetSymbolValue::do_codegen_c(CFunctionWriter& w) {
@@ -1021,4 +1039,11 @@ void IR_Int128Math2Asm::do_codegen_c(CFunctionWriter& w) {
       unsupported("operación int128 desconocida");
   }
   w.line(fmt::format("{} = {}({}, {}u);", w.var(m_dst), fn, w.var(m_src), (unsigned)*m_imm));
+}
+
+void IR_GetStackAddr::do_codegen_c(CFunctionWriter& w) {
+  if (!w.is_gpr(m_dest)) {
+    unsupported("dirección de pila a registro no GPR");
+  }
+  w.line(fmt::format("{} = {};", w.var(m_dest), w.stack_addr(m_slot)));
 }
