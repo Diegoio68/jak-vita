@@ -23,6 +23,7 @@ REGISTRY_HEAD = """/* Generado por goalc/c_backend/tools/build_pc_lib.py. NO EDI
 #include "goal2c_rt.h"
 
 uint8_t* g2c_mem;
+uint64_t* g2c_pp_ptr;
 static g2c_host g_host;
 
 uint32_t g2c_rt_symbol(const char* name) {
@@ -68,7 +69,8 @@ def main():
     reg += "  0\n};\n\n"
     reg += ("__attribute__((visibility(\"default\")))\n"
             "const g2c_file_info* const* g2c_init(const g2c_host* host) {\n"
-            "  g_host = *host;\n  g2c_mem = host->mem;\n  return g_files;\n}\n")
+            "  g_host = *host;\n  g2c_mem = host->mem;\n  g2c_pp_ptr = host->pp;\n"
+            "  return g_files;\n}\n")
     registry = src_dir / "registry.c"
     registry.write_text(reg, encoding="utf-8")
 

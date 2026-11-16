@@ -35,6 +35,8 @@ void g2c_math_link(void);
 void g2c_math_link32(void);
 
 uint8_t* g2c_mem = nullptr;
+static uint64_t g_pp_storage = 0;
+uint64_t* g2c_pp_ptr = &g_pp_storage;
 }
 
 namespace {

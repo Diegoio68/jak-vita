@@ -38,6 +38,17 @@ typedef int64_t g2c_sgpr;
 /* Base de la memoria GOAL. La define el runtime (o el arnés de pruebas). */
 extern uint8_t* g2c_mem;
 
+/* pp: el proceso actual (registro r13 en goalc x86). El C generado lo lee y escribe como
+   G2C_PP. El runtime fija g2c_pp_ptr: en el modo mixto de PC apunta a la variable del runtime
+   que guarda r13 en cada entrada x86 -> C y lo pasa en cada llamada C -> x86. */
+extern uint64_t* g2c_pp_ptr;
+#define G2C_PP (*g2c_pp_ptr)
+
+/* rsp y r15 de goalc x86, de solo lectura: el marco de C actual (en la misma pila que el
+   proceso) y la base de la memoria GOAL. */
+#define G2C_SP_REG ((g2c_gpr)(uintptr_t)__builtin_frame_address(0))
+#define G2C_BASE_REG ((g2c_gpr)(uintptr_t)g2c_mem)
+
 /* Dirección GOAL de un símbolo por nombre. La define el runtime (o el arnés). */
 uint32_t g2c_rt_symbol(const char* name);
 
@@ -71,6 +82,7 @@ typedef struct {
   uint32_t (*symbol)(const char* name);                            /* g2c_rt_symbol */
   uint32_t (*static_addr)(const char* obj, int seg, int off);      /* g2c_rt_static */
   uint64_t (*call)(uint32_t fn, int nargs, const uint64_t* args);  /* g2c_host_call */
+  uint64_t* pp;                                                    /* g2c_pp_ptr */
 } g2c_host;
 typedef const g2c_file_info* const* (*g2c_init_fn)(const g2c_host* host);
 

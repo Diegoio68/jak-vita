@@ -34,9 +34,12 @@ class Unsupported : public std::runtime_error {
 }
 
 std::string escape_c_comment(std::string s) {
-  size_t pos = 0;
-  while ((pos = s.find("*/", pos)) != std::string::npos) {
-    s.replace(pos, 2, "* /");
+  // ni "*/" (cerraría el comentario) ni "/*" (gcc avisa de comentario anidado)
+  for (const char* bad : {"*/", "/*"}) {
+    size_t pos = 0;
+    while ((pos = s.find(bad, pos)) != std::string::npos) {
+      s.replace(pos, 2, std::string(1, bad[0]) + " " + bad[1]);
+    }
   }
   return s;
 }
@@ -99,8 +102,28 @@ std::string CFunctionWriter::var(const RegVal* rv) {
     // En C una variable rlet es una variable más: el registro concreto da igual. Salvo los
     // registros con significado propio en GOAL, cuyo valor no existe en el C.
     auto reg = *rv->rlet_constraint();
-    if (reg == emitter::RSP || reg == emitter::R13 || reg == emitter::R14 || reg == emitter::R15) {
-      unsupported("rlet sobre rsp/r13(pp)/r14(st)/r15(base): " + rv->print());
+    if (reg == emitter::R13) {
+      // r13 = pp, el proceso actual (with-pp, y self en los behaviors). En C es la variable
+      // global G2C_PP del runtime: leerla y escribirla es leer y escribir el registro.
+      if (!is_gpr(rv)) {
+        unsupported("pp en un registro que no es GPR");
+      }
+      return "G2C_PP";
+    }
+    // rsp, r14 (st) y r15 (base): GOAL solo los LEE (comprobar la pila en suspend, with-sp,
+    // calcular direcciones). En C son expresiones de solo lectura: si algún código intentara
+    // escribirlas, su C no compilaría y se vería enseguida.
+    if (!is_gpr(rv)) {
+      unsupported("rsp/r14/r15 en un registro que no es GPR");
+    }
+    if (reg == emitter::RSP) {
+      return "G2C_SP_REG";  // marco de C actual: está en la misma pila que el proceso
+    }
+    if (reg == emitter::R15) {
+      return "G2C_BASE_REG";  // base de la memoria GOAL
+    }
+    if (reg == emitter::R14) {
+      return "((g2c_gpr)" + symbol("#f") + ")";  // tabla de símbolos: #f está en su inicio
     }
   }
   if (rv->forced_on_stack()) {
@@ -448,6 +471,10 @@ void IR_ValueReset::do_codegen_c(CFunctionWriter& w) {
   // En la primera instrucción marca los parámetros (en orden). Después no genera código.
   if (w.current_ir == 0) {
     for (auto* rv : m_args) {
+      // self de los behaviors va en la lista pero no es un argumento: llega en r13 (pp)
+      if (rv->rlet_constraint().has_value() && *rv->rlet_constraint() == emitter::R13) {
+        continue;
+      }
       w.params.push_back(rv);
     }
   }

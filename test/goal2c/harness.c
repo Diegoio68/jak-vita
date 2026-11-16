@@ -38,6 +38,8 @@ void G2C_LINK(void);
 /* memoria GOAL falsa: 1 MB. Los símbolos viven en 0x1000 + 16*i. */
 #define MEM_SIZE (1u << 20)
 uint8_t* g2c_mem;
+static uint64_t g_pp_storage;
+uint64_t* g2c_pp_ptr = &g_pp_storage;
 
 static char sym_names[256][64];
 static int sym_count;

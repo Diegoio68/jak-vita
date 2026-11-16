@@ -199,6 +199,7 @@ void update_library() {
   host.symbol = host_symbol;
   host.static_addr = host_static;
   host.call = host_call;
+  host.pp = &g_pp;
   for (auto files = init(&host); *files; files++) {
     g_files[(*files)->obj_name] = *files;
   }
