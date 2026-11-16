@@ -87,6 +87,11 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   goalc ejecutando test/goal2c/math_cases.txt en el runtime real. Genera
   out/goal2c/jak1/{math.c,math_expected.h}, que usa el benchmark de la Vita.
 - No romper upstream: tras tocar goalc, pasar `build/goalc-test` completo.
+- Decisión riesgo 3 (2026-11-16, medido en Vita real a 333 MHz con vita/bench):
+  los GPR del C generado son u64 (semántica exacta de GOAL). u64 cuesta +8 % total frente
+  a u32 en math.gc (rango 0.97x-1.21x por función), por debajo del umbral del 15-20 %.
+  No se hace narrowing a 32 bits en Fase 2; queda como optimización de Fase 6, solo en
+  funciones calientes que señale el perfilado y solo si el tipo GOAL lo garantiza.
 
 ## Fases
 0. Fork compila en PC; extractor corre con el ISO de Jak 1. Hello world vitaGL en Vita.
