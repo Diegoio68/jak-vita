@@ -1,0 +1,112 @@
+[lote] 27 ficheros: transpilando
+[lote] 27 pasan objeto idéntico + C limpio (PC y ARM); 0 rechazados; 0 funciones sin traducir en el lote
+[lote] lote completo (27): FALLA boot_smoke.sh
+[goal2c] plat-eco: 15 funciones en C (10 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] ropebridge: 18 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] ticky: 4 funciones en C (0 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 202, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 13 (generic-obs-h..): FALLA boot_smoke.sh
+[goal2c] water-anim: 9 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] dark-eco-pool: 4 funciones en C (1 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] joint-exploder: 25 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 194, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 6 (generic-obs-h..): boot_smoke.sh OK
+[lote] bisección 6 (generic-obs-h..): FALLA frame_check.sh
+FALLO: el fotograma 945 difiere
+  x86:   945 405f4ea38e7604f2
+  otro:  945 d77273a7cce25e28
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 3 (generic-obs-h..): boot_smoke.sh OK
+[lote] bisección 3 (generic-obs-h..): frame_check.sh OK
+[lote] bisección 3 (generic-obs-h..): collide_check.sh OK
+[lote] bisección 3 (generic-obs..): boot_smoke.sh OK
+[lote] bisección 3 (generic-obs..): FALLA frame_check.sh
+FALLO: el fotograma 945 difiere
+  x86:   945 405f4ea38e7604f2
+  otro:  945 d77273a7cce25e28
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 1 (generic-obs..): boot_smoke.sh OK
+[lote] bisección 1 (generic-obs..): FALLA frame_check.sh
+FALLO: el fotograma 945 difiere
+  x86:   945 405f4ea38e7604f2
+  otro:  945 d77273a7cce25e28
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 2 (voicebox..): boot_smoke.sh OK
+[lote] bisección 2 (voicebox..): FALLA frame_check.sh
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e800042d32
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e800042d32
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e800042d32
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e800042d32
+[lote] bisección 1 (voicebox..): boot_smoke.sh OK
+[lote] bisección 1 (voicebox..): frame_check.sh OK
+[lote] bisección 1 (voicebox..): collide_check.sh OK
+[lote] bisección 1 (water..): boot_smoke.sh OK
+[lote] bisección 1 (water..): FALLA frame_check.sh
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e8000434bd
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e8000434bd
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e8000434bd
+[goal2c] SIGSEGV en 0x2123000000 (fuera de librerías), dirección 0x3e8000434bd
+[lote] bisección 7 (collectables-part..): FALLA boot_smoke.sh
+[goal2c] water-anim: 9 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] dark-eco-pool: 4 funciones en C (1 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] joint-exploder: 25 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 79, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 3 (collectables-part..): boot_smoke.sh OK
+[lote] bisección 3 (collectables-part..): FALLA frame_check.sh
+FALLO: el fotograma 1192 difiere
+  x86:   1192 25c4f2ee873dc1d8
+  otro:  1192 481a71389abe809c
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 1 (collectables-part..): boot_smoke.sh OK
+[lote] bisección 1 (collectables-part..): frame_check.sh OK
+[lote] bisección 1 (collectables-part..): collide_check.sh OK
+[lote] bisección 2 (collectables..): boot_smoke.sh OK
+[lote] bisección 2 (collectables..): FALLA frame_check.sh
+FALLO: el fotograma 1192 difiere
+  x86:   1192 25c4f2ee873dc1d8
+  otro:  1192 481a71389abe809c
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 1 (collectables..): boot_smoke.sh OK
+[lote] bisección 1 (collectables..): FALLA frame_check.sh
+FALLO: el fotograma 1192 difiere
+  x86:   1192 25c4f2ee873dc1d8
+  otro:  1192 481a71389abe809c
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 1 (process-taskable..): boot_smoke.sh OK
+[lote] bisección 1 (process-taskable..): frame_check.sh OK
+[lote] bisección 1 (process-taskable..): collide_check.sh OK
+[lote] bisección 4 (crates..): FALLA boot_smoke.sh
+[goal2c] water-anim: 9 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] dark-eco-pool: 4 funciones en C (1 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] joint-exploder: 25 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 71, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 2 (crates..): FALLA boot_smoke.sh
+[goal2c] default-menu: 123 funciones en C (58 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] rigid-body-h: 2 funciones en C (0 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] joint-exploder: 25 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 70, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 1 (crates..): FALLA boot_smoke.sh
+[goal2c] part-tester: 5 funciones en C (1 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] default-menu: 123 funciones en C (58 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+[goal2c] joint-exploder: 25 funciones en C (3 parcheadas in situ), 0 se quedan en x86 (0 por escribir pp)
+líneas de log tras cargar el nivel: 70, log: /home/diego/proyectos/jak-project/build/pc_test/boot_smoke.log
+[lote] bisección 1 (rigid-body-h..): boot_smoke.sh OK
+[lote] bisección 1 (rigid-body-h..): frame_check.sh OK
+[lote] bisección 1 (rigid-body-h..): collide_check.sh OK
+[lote] bisección 2 (water-anim..): boot_smoke.sh OK
+[lote] bisección 2 (water-anim..): frame_check.sh OK
+[lote] bisección 2 (water-anim..): collide_check.sh OK
+[lote] bisección 14 (rigid-body..): boot_smoke.sh OK
+[lote] bisección 14 (rigid-body..): FALLA frame_check.sh
+FALLO: el fotograma 945 difiere
+  x86:   945 405f4ea38e7604f2
+  otro:  945 c29135f2c109303f
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 7 (rigid-body..): boot_smoke.sh OK
+[lote] bisección 7 (rigid-body..): FALLA frame_check.sh
+FALLO: el fotograma 1195 difiere
+  x86:   1195 d19979a77090a3ed
+  otro:  1195 1dba60af3076a28f
+  logs: /home/diego/proyectos/jak-project/build/pc_test/frame_a.log /home/diego/proyectos/jak-project/build/pc_test/frame_b.log
+[lote] bisección 3 (rigid-body..): boot_smoke.sh OK
+[lote] bisección 3 (rigid-body..): frame_check.sh OK
