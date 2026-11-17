@@ -21,15 +21,28 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="${1:-$ROOT/out/goal2c/jak1/libgoal2c_jak1.so}"
-SECS="${FRAME_SECS:-45}"
+SECS_DEFAULT=45
 MIN="${FRAME_MIN:-600}"
-RECORRIDO="${FRAME_RECORRIDO-$ROOT/test/goal2c/recorrido.txt}"
+# recorrido oficial (grabado por Diego con task boot-game GRABAR=...) si existe
+if [[ -f "$ROOT/test/goal2c/recorrido_oficial.txt" ]]; then
+  RECORRIDO="${FRAME_RECORRIDO-$ROOT/test/goal2c/recorrido_oficial.txt}"
+else
+  RECORRIDO="${FRAME_RECORRIDO-$ROOT/test/goal2c/recorrido.txt}"
+fi
 OUT="$ROOT/build/pc_test"
+# con una grabación (sin-repetir): tiempo para reproducirla entera (sin ventana van ~300 fps)
+if [[ -n "$RECORRIDO" ]] && grep -q "^# sin-repetir" "$RECORRIDO"; then
+  rec_frames=$(grep -E "^[0-9]" "$RECORRIDO" | awk '{s += $1} END {print s + 0}')
+  SECS_DEFAULT=$(( rec_frames / 250 + 30 > 45 ? rec_frames / 250 + 30 : 45 ))
+fi
+SECS="${FRAME_SECS:-$SECS_DEFAULT}"
 mkdir -p "$OUT"
 
 run() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
+  # configuración limpia (sin partidas ni ajustes del usuario), como en la grabación
+  rm -rf "$OUT/cfg_$1"
   GOAL2C_HUELLA=1 GOAL2C_LIB="$2" GOAL2C_RECORRIDO="$RECORRIDO" timeout "$SECS" "$ROOT/build/game/gk" --no-display -v \
-    --game jak1 -- -boot -fakeiso > "$OUT/frame_$1.log" 2>&1
+    --game jak1 --config-path "$OUT/cfg_$1" -- -boot -fakeiso > "$OUT/frame_$1.log" 2>&1
   sed 's/\x1b\[[0-9;]*m//g' "$OUT/frame_$1.log" |
     grep -oE "\[huella\] [0-9]+ [0-9a-f]+ estricto [0-9a-f]+" |
     awk '{print $2, $3}' > "$OUT/frame_$1.txt"
@@ -63,6 +76,14 @@ else
   run b "$LIB"
   label="con goal2c"
 fi
+# control de sincronía del recorrido grabado: la posición de Jak debe ser la de la grabación
+for f in a b; do
+  if [[ -f "$OUT/frame_$f.log" ]] && grep -q "DESINCRONIZADO" "$OUT/frame_$f.log"; then
+    echo "AVISO ($f): $(sed 's/\x1b\[[0-9;]*m//g' "$OUT/frame_$f.log" | grep -o "DESINCRONIZADO.*" | head -1)"
+  fi
+done
+sync_b=$(sed 's/\x1b\[[0-9;]*m//g' "$OUT/frame_b.log" | grep -o "sincronía: .*" | tail -1)
+[[ -n "$sync_b" ]] && echo "recorrido ($label): $sync_b"
 if grep -q "SIGSEGV" "$OUT/frame_b.log"; then
   echo "FALLO: SIGSEGV ($label)"
   grep -E "SIGSEGV|llamado desde" "$OUT/frame_b.log" | head -5

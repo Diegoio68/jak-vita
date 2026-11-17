@@ -1,5 +1,7 @@
 #include "kdgo.h"
 
+#include "game/goal2c/goal2c_jak1.h"  // goal2c (Jak Vita)
+
 #include <cstdlib>
 #include <cstring>
 #include <thread>
@@ -74,10 +76,10 @@ u64 RpcCall_wrapper(void* _args) {
  * Check if the given RPC is busy, by channel.
  */
 u32 RpcBusy(s32 channel) {
-  // goal2c (Jak Vita): con GOAL2C_HUELLA (validación x86 frente a C fotograma a fotograma) el
+  // goal2c (Jak Vita): con GOAL2C_HUELLA o GOAL2C_GRABAR (validación x86 frente a C fotograma a fotograma) el
   // juego espera a que el IOP termine en vez de seguir: así cada carga acaba en el mismo
   // fotograma en todas las ejecuciones y la línea temporal del juego es determinista.
-  static const bool deterministic = std::getenv("GOAL2C_HUELLA") != nullptr;
+  static const bool deterministic = goal2c_runtime::deterministic_mode();
   if (deterministic) {
     while (sceSifCheckStatRpc(&cd[channel].rpcd)) {
       std::this_thread::yield();

@@ -1283,8 +1283,7 @@ void mask_unpack_stq_w(u8* data, u32 size) {
 }
 
 bool virtual_ee_timer(unsigned long long* ticks) {
-  static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
-  if (!enabled) {
+  if (!deterministic_mode()) {
     return false;
   }
   // 100 ticks (1/3 de microsegundo) por lectura, sin pasar al fotograma siguiente
@@ -1296,25 +1295,40 @@ bool virtual_ee_timer(unsigned long long* ticks) {
 }
 
 namespace {
+// Recorrido: una línea por tramo de fotogramas con la misma entrada (ver test/goal2c/recorrido.txt)
+//   <duración> <botones> <lx> <ly> [<rx> <ry> [<presión x12>]]
+// y líneas de control "# sync <t> <x> <y> <z>" (posición de Jak en el fotograma t, en hex de
+// los bits del float; "-" si no hay *target*). "# sin-repetir": al acabar, mando en reposo.
 struct PadStep {
   u64 from, to;  // [from, to) en fotogramas desde que existe *target*
   u16 buttons;
-  u8 leftx, lefty;
+  u8 lx, ly, rx, ry;
+  u8 press[12];
+};
+struct SyncPoint {
+  u64 t;
+  bool has_target;
+  u32 x, y, z;
 };
 std::vector<PadStep> g_script;
-u64 g_script_len = 0;  // el guion se repite
+std::vector<SyncPoint> g_sync;
+size_t g_sync_next = 0;
+u64 g_script_len = 0;
+bool g_script_repeat = true;
 bool g_script_loaded = false;
+int g_sync_ok = 0, g_sync_bad = 0;
+
+const char* kButtonNames[16] = {"select", "l3", "r3", "start", "up", "right", "down", "left",
+                                "l2", "r2", "l1", "r1", "triangle", "circle", "x", "square"};
 
 u16 parse_buttons(const std::string& txt) {
-  static const char* names[16] = {"select", "l3", "r3", "start", "up", "right", "down", "left",
-                                  "l2", "r2", "l1", "r1", "triangle", "circle", "x", "square"};
   u16 b = 0;
   size_t pos = 0;
   while (pos <= txt.size()) {
     size_t end = txt.find('+', pos);
     std::string name = txt.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
     for (int i = 0; i < 16; i++) {
-      if (name == names[i]) {
+      if (name == kButtonNames[i]) {
         b |= (u16)(1 << i);
       }
     }
@@ -1326,74 +1340,262 @@ u16 parse_buttons(const std::string& txt) {
   return b;
 }
 
+std::string format_buttons(u16 b) {
+  std::string out;
+  for (int i = 0; i < 16; i++) {
+    if (b & (1 << i)) {
+      out += (out.empty() ? "" : "+") + std::string(kButtonNames[i]);
+    }
+  }
+  return out.empty() ? "-" : out;
+}
+
 void load_script(const char* path) {
   g_script.clear();
+  g_sync.clear();
+  g_sync_next = 0;
   g_script_len = 0;
+  g_script_repeat = true;
   FILE* f = fopen(path, "r");
   if (!f) {
     lg::die("[recorrido] no se puede leer {}", path);
   }
-  char line[256];
+  char line[512];
   while (fgets(line, sizeof(line), f)) {
-    if (line[0] == '#' || line[0] == '\n') {
+    if (line[0] == '#') {
+      unsigned long long t;
+      unsigned x, y, z;
+      char dash[4];
+      if (sscanf(line, "# sync %llu %x %x %x", &t, &x, &y, &z) == 4) {
+        g_sync.push_back({t, true, x, y, z});
+      } else if (sscanf(line, "# sync %llu %1s", &t, dash) == 2 && dash[0] == '-') {
+        g_sync.push_back({t, false, 0, 0, 0});
+      } else if (strncmp(line, "# sin-repetir", 13) == 0) {
+        g_script_repeat = false;
+      }
       continue;
     }
     unsigned long long dur;
-    char buttons[128];
-    unsigned lx, ly;
-    if (sscanf(line, "%llu %127s %u %u", &dur, buttons, &lx, &ly) == 4) {
-      PadStep st{g_script_len, g_script_len + dur, parse_buttons(buttons), (u8)lx, (u8)ly};
-      g_script.push_back(st);
-      g_script_len += dur;
+    char buttons[160];
+    unsigned v[16];
+    int n = sscanf(line,
+                   "%llu %159s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u", &dur, buttons,
+                   &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10],
+                   &v[11], &v[12], &v[13], &v[14], &v[15]);
+    if (n < 4) {
+      continue;
     }
+    PadStep st{};
+    st.from = g_script_len;
+    st.to = g_script_len + dur;
+    st.buttons = parse_buttons(buttons);
+    st.lx = (u8)v[0];
+    st.ly = (u8)v[1];
+    st.rx = n >= 6 ? (u8)v[2] : 128;
+    st.ry = n >= 6 ? (u8)v[3] : 128;
+    for (int i = 0; i < 12; i++) {
+      st.press[i] = n >= 18 ? (u8)v[4 + i] : 0;
+    }
+    g_script.push_back(st);
+    g_script_len += dur;
   }
   fclose(f);
-  lg::info("[recorrido] {}: {} pasos, {} fotogramas (se repite)", path, g_script.size(),
-           g_script_len);
+  lg::info("[recorrido] {}: {} tramos, {} fotogramas, {} puntos de sincronía{}", path,
+           g_script.size(), g_script_len, g_sync.size(),
+           g_script_repeat ? " (se repite)" : "");
+}
+
+//! posición de Jak (trans de la raíz de *target*), en bits; false si no hay *target*
+bool target_pos(u32 out[3]) {
+  auto target = jak1::find_symbol_from_c("*target*");
+  u32 proc = target.offset ? *Ptr<u32>(target.offset).c() : s7.offset;
+  if (proc == s7.offset || proc == 0) {
+    return false;
+  }
+  u32 root = *Ptr<u32>(proc - 4 + 112).c();  // process-drawable root (trsqv)
+  if (root == 0 || root == s7.offset) {
+    return false;
+  }
+  for (int i = 0; i < 3; i++) {
+    out[i] = *Ptr<u32>(root - 4 + 16 + 4 * i).c();  // trs trans
+  }
+  return true;
+}
+
+bool target_exists() {
+  auto target = jak1::find_symbol_from_c("*target*");
+  u32 value = target.offset ? *Ptr<u32>(target.offset).c() : s7.offset;
+  return value != s7.offset && value != 0;
+}
+
+// ---- grabación (GOAL2C_GRABAR) ----
+FILE* g_rec_pad = nullptr;
+PadStep g_rec_cur{};
+bool g_rec_have = false;
+u64 g_rec_last_frame = ~0ULL;
+
+void rec_flush_step() {
+  if (!g_rec_have || !g_rec_pad) {
+    return;
+  }
+  auto& st = g_rec_cur;
+  fprintf(g_rec_pad, "%llu %s %u %u %u %u", (unsigned long long)(st.to - st.from),
+          format_buttons(st.buttons).c_str(), st.lx, st.ly, st.rx, st.ry);
+  for (int i = 0; i < 12; i++) {
+    fprintf(g_rec_pad, " %u", st.press[i]);
+  }
+  fprintf(g_rec_pad, "\n");
+  fflush(g_rec_pad);
+}
+
+void record_pad(const CPadInfo* pad, u64 t) {
+  if (t == g_rec_last_frame) {
+    return;  // una muestra por fotograma
+  }
+  g_rec_last_frame = t;
+  PadStep st{};
+  bool connected = (pad->valid & 0x80) == 0;
+  st.buttons = connected ? pad->button0 : 0;
+  st.lx = connected ? pad->leftx : 128;
+  st.ly = connected ? pad->lefty : 128;
+  st.rx = connected ? pad->rightx : 128;
+  st.ry = connected ? pad->righty : 128;
+  for (int i = 0; i < 12; i++) {
+    st.press[i] = connected ? pad->abutton[i] : 0;
+  }
+  bool same = g_rec_have && st.buttons == g_rec_cur.buttons && st.lx == g_rec_cur.lx &&
+              st.ly == g_rec_cur.ly && st.rx == g_rec_cur.rx && st.ry == g_rec_cur.ry &&
+              memcmp(st.press, g_rec_cur.press, 12) == 0;
+  if (same) {
+    g_rec_cur.to = t + 1;
+  } else {
+    rec_flush_step();
+    st.from = t;
+    st.to = t + 1;
+    g_rec_cur = st;
+    g_rec_have = true;
+  }
+  if (t % 60 == 0) {  // control de sincronía cada segundo de juego
+    rec_flush_step();
+    g_rec_have = false;
+    u32 p[3];
+    if (target_pos(p)) {
+      fprintf(g_rec_pad, "# sync %llu %08x %08x %08x\n", (unsigned long long)t, p[0], p[1], p[2]);
+    } else {
+      fprintf(g_rec_pad, "# sync %llu -\n", (unsigned long long)t);
+    }
+    fflush(g_rec_pad);
+  }
+}
+
+void grab_pad(const char* path, const CPadInfo* pad, u64 t) {
+  if (!g_rec_pad) {
+    g_rec_pad = fopen(path, "w");
+    if (!g_rec_pad) {
+      lg::die("[grabación] no se puede escribir {}", path);
+    }
+    fprintf(g_rec_pad,
+            "# goal2c (Jak Vita): recorrido grabado (task boot-game GRABAR=<fichero>).\n"
+            "# Formato: duración botones lx ly rx ry presión x12; # sync = posición de Jak.\n"
+            "# sin-repetir\n");
+    lg::info("[grabación] grabando el mando 0 en {}", path);
+  }
+  record_pad(pad, t);
 }
 }  // namespace
 
+bool deterministic_mode() {
+  static const bool on =
+      std::getenv("GOAL2C_HUELLA") != nullptr || std::getenv("GOAL2C_GRABAR") != nullptr;
+  return on;
+}
+
 void scripted_pad(unsigned long long cpad_info) {
-  static const char* path = std::getenv("GOAL2C_RECORRIDO");
-  if (!path || !std::getenv("GOAL2C_HUELLA")) {
+  static const char* replay = std::getenv("GOAL2C_RECORRIDO");
+  static const char* grab = std::getenv("GOAL2C_GRABAR");
+  if (!deterministic_mode() || (!(replay && *replay) && !(grab && *grab))) {
     return;
-  }
-  if (!g_script_loaded) {
-    load_script(path);
-    g_script_loaded = true;
   }
   auto pad = Ptr<CPadInfo>((u32)cpad_info).c();
-  if (pad->number != 0 || g_script_len == 0) {
+  if (pad->number != 0) {
     return;
   }
-  // mando 0 conectado, DualShock (status 0x7_), en reposo
-  pad->valid = 0;
-  pad->status = 0x73;
-  pad->button0 = 0;
-  pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
   if (g_script_start < 0) {
-    auto target = jak1::find_symbol_from_c("*target*");
-    u32 value = target.offset ? *Ptr<u32>(target.offset).c() : s7.offset;
-    if (value == s7.offset || value == 0) {
+    if (!target_exists()) {
+      if (replay && *replay) {  // reproducción: mando en reposo hasta que exista Jak
+        pad->valid = 0;
+        pad->status = 0x73;
+        pad->button0 = 0;
+        pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
+        memset(pad->abutton, 0, sizeof(pad->abutton));
+      }
       return;
     }
     g_script_start = (s64)g_fingerprint_frame;
     lg::info("[recorrido] empieza en el fotograma {}", g_fingerprint_frame);
   }
-  u64 t = (g_fingerprint_frame - (u64)g_script_start) % g_script_len;
-  for (auto& st : g_script) {
-    if (t >= st.from && t < st.to) {
-      pad->button0 = st.buttons;
-      pad->leftx = st.leftx;
-      pad->lefty = st.lefty;
-      break;
+  u64 t = g_fingerprint_frame - (u64)g_script_start;
+
+  if (!(replay && *replay)) {  // solo grabación: el mando real
+    grab_pad(grab, pad, t);
+    return;
+  }
+  if (!g_script_loaded) {
+    load_script(replay);
+    g_script_loaded = true;
+  }
+  // control de sincronía: la posición de Jak debe ser la grabada, bit a bit
+  while (g_sync_next < g_sync.size() && g_sync[g_sync_next].t < t) {
+    g_sync_next++;
+  }
+  if (g_sync_next < g_sync.size() && g_sync[g_sync_next].t == t) {
+    auto& sp = g_sync[g_sync_next++];
+    u32 p[3];
+    bool has = target_pos(p);
+    bool ok = has == sp.has_target && (!has || (p[0] == sp.x && p[1] == sp.y && p[2] == sp.z));
+    if (ok) {
+      g_sync_ok++;
+    } else if (g_sync_bad++ == 0) {
+      lg::warn("[recorrido] DESINCRONIZADO en t={}: Jak en {:08x} {:08x} {:08x}, grabado {:08x} "
+               "{:08x} {:08x}",
+               t, has ? p[0] : 0, has ? p[1] : 0, has ? p[2] : 0, sp.x, sp.y, sp.z);
     }
+    if (g_sync_next == g_sync.size() || g_sync_next % 60 == 0) {
+      lg::info("[recorrido] sincronía: {} puntos bien, {} mal", g_sync_ok, g_sync_bad);
+    }
+  }
+  pad->valid = 0;
+  pad->status = 0x73;
+  pad->button0 = 0;
+  pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
+  memset(pad->abutton, 0, sizeof(pad->abutton));
+  if (g_script_len != 0 && (g_script_repeat || t < g_script_len)) {
+    u64 tt = t % g_script_len;
+    for (auto& st : g_script) {
+      if (tt >= st.from && tt < st.to) {
+        pad->button0 = st.buttons;
+        pad->leftx = st.lx;
+        pad->lefty = st.ly;
+        pad->rightx = st.rx;
+        pad->righty = st.ry;
+        memcpy(pad->abutton, st.press, 12);
+        break;
+      }
+    }
+  }
+  // con GOAL2C_GRABAR además: graba la entrada inyectada (prueba de la grabación sin ventana)
+  if (grab && *grab) {
+    grab_pad(grab, pad, t);
   }
 }
 
 void frame_fingerprint(u32 chain) {
   static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
   if (!enabled) {
+    if (deterministic_mode()) {  // grabación: reloj virtual y contador, sin hash
+      g_vclock_in_frame = 0;
+      g_fingerprint_frame++;
+    }
     return;
   }
   g_vclock_in_frame = 0;
@@ -1518,6 +1720,10 @@ int replaced_functions(const char*) {
 void frame_fingerprint(unsigned int) {}
 
 void scripted_pad(unsigned long long) {}
+
+bool deterministic_mode() {
+  return false;
+}
 
 bool virtual_ee_timer(unsigned long long*) {
   return false;

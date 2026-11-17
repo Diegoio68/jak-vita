@@ -171,6 +171,16 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   CPadGetData sustituye el mando 0 por el guion; los fotogramas cuentan desde que existe
   *target*; se repite. frame_check.sh lo usa por defecto (FRAME_RECORRIDO= lo desactiva). Pasa
   por título, nueva partida y cinemática: cubre mucho más que Jak en reposo.
+- Grabación del mando (recorrido oficial de Diego): `task boot-game GRABAR=<fichero>` ->
+  test/goal2c/grabar.sh: todo x86, sin -debug, modo determinista (GOAL2C_GRABAR activa el reloj
+  virtual y RpcBusy síncrono, como la huella), configuración limpia (--config-path
+  build/pc_test/cfg_grabacion: sin partidas ni ajustes) y en WSL GPU por d3d12
+  (GALLIUM_DRIVER=d3d12 MESA_GL_VERSION_OVERRIDE=4.5; sin eso llvmpipe a ~10 fps). Graba
+  botones, sticks y presiones por fotograma desde que existe *target*, y cada segundo de juego
+  "# sync t x y z" (posición de Jak). Al reproducir (frame_check usa
+  test/goal2c/recorrido_oficial.txt si existe, también con config limpia) se compara la posición:
+  "DESINCRONIZADO" = la grabación no se reproduce igual. Probado: grabar con ventana y GPU y
+  reproducir sin ventana -> sincronía exacta y huella x86 = C.
 - Diagnóstico: GOAL2C_FN_X86=nombre,... deja esas funciones en x86; GOAL2C_PP_X86 /
   GOAL2C_PP_SOLO=obj,... para bisecar las que escriben pp. Proceso colgado: enviar SIGSEGV al
   hilo EE (tgkill) y el manejador lista la pila (direcciones de gk, librerías y GOAL).

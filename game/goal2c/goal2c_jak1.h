@@ -38,4 +38,9 @@ bool virtual_ee_timer(unsigned long long* ticks);
 //! entrada en el mismo fotograma de juego. Formato en test/goal2c/recorrido.txt.
 void scripted_pad(unsigned long long cpad_info);
 
+//! Modo determinista (GOAL2C_HUELLA o GOAL2C_GRABAR): reloj virtual de 1/60 s por fotograma y
+//! cargas del IOP que acaban en el fotograma en que se consultan (RpcBusy espera).
+//! Con GOAL2C_GRABAR=<fichero>, scripted_pad graba el mando 0 en formato de recorrido.
+bool deterministic_mode();
+
 }  // namespace goal2c_runtime
