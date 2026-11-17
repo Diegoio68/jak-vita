@@ -1219,11 +1219,12 @@
                   ;; if pc rendering code needs to update merc vertices
                   (pc-merc-vtx-update #f)
                   (blerc-weights (new 'stack-no-clear 'array 'float 40)))
-              ;; goal2c (Jak Vita): a cero. Solo se rellenan los pesos del modelo, pero
-              ;; pc-merc-draw-request copia los 40 a la cadena DMA: el resto era basura de la
-              ;; pila (distinta con código C o x86; el renderer no la usa).
+              ;; CAMBIO JAK VITA (inicio): pesos de blerc a cero. Solo se rellenan los del
+              ;; modelo, pero pc-merc-draw-request copia los 40 a la cadena DMA: el resto era
+              ;; basura de la pila (distinta con código C o x86; el renderer no la usa).
               (dotimes (bw-i 40)
                 (set! (-> blerc-weights bw-i) 0.0))
+              ;; CAMBIO JAK VITA (fin)
               ;; loop over effects, and set them up/pick renderers.
               (dotimes (effect-idx (the-as int (-> geom header effect-count)))
                 ;; check if this "effect" uses texture scrolling

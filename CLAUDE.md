@@ -45,6 +45,11 @@ Después Jak 2 y Jak 3.
 - Vita3K está instalado en Windows: copiar el .vpk a /mnt/c/Users/<usuario>/jakvita/.
 - Vita real con HENkaku, VitaShell, vitacompanion (FTP 1337, comandos 1338), ShaRKF00D.
 
+## Cambios de Jak Vita en goal_src (upstream)
+Marcados en el código entre `;; CAMBIO JAK VITA (inicio)` y `;; CAMBIO JAK VITA (fin)`
+(`grep -rn "CAMBIO JAK VITA" goal_src`). Revisarlos en cada merge de upstream.
+- engine/gfx/foreground/bones.gc (draw-bones): pesos de blerc a cero (aprobado 2026-11-17).
+
 ## Arquitectura objetivo
 goal_src/ (GOAL decompilado, ya existe)
   ├─ goalc -> x86-64          (upstream, PC; NO romper)
@@ -217,7 +222,7 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   escribe en esa dirección GOAL (rip, argumentos y direcciones GOAL de la pila).
 - Lote A (2026-11-17): los dos "culpables" (connect, drawable) eran basura de pila: draw-bones
   solo rellena los pesos de blerc del modelo y pc-merc-draw-request copia los 40 a la cadena
-  DMA. Corregido EN goal_src (bones.gc los pone a cero; pendiente de revisión por Diego).
+  DMA. Corregido EN goal_src (bones.gc los pone a cero; cambio de Jak Vita aprobado).
 - goalc-test SIEMPRE con `timeout`: si el runtime cae, el test siguiente se queda esperando
   para siempre (se perdió una noche así).
 - Comprobación en ARM por lote: casos en test/goal2c/arm/<lote>_arm.gc (preludio
