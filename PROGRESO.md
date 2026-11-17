@@ -1,6 +1,6 @@
 # Jak Vita: progreso
 
-Actualizado: 2026-11-17 (punto de control: segunda grabación).
+Actualizado: 2026-11-17 (punto de control: recorrido oficial).
 
 **Avance goal2c: 4611/9648 funciones de goal_src/jak1 en C dentro del juego (47.8 %);
 goal2c ya traduce 9637/9648 (99.9 %).**
@@ -34,14 +34,12 @@ goal2c ya traduce 9637/9648 (99.9 %).**
 
 ## Último logro
 
-- Grabación de Diego (7,3 min) completa y sin cierres: el arreglo de `level.gc` funciona.
-- Pero sin ventana se desincroniza a los 86 s (primera célula). La causa probable: con ventana,
-  el juego ve el tamaño de la pantalla y los mandos reales (proporción, cámara, menús); sin
-  ventana, no. Arreglado: en modo determinista el juego ve siempre "sin pantalla y sin mandos".
-  Hay que grabar otra vez para comprobarlo (la grabación anterior se hizo sin este arreglo).
+Recorrido oficial grabado por Diego (`test/goal2c/recorrido_oficial.txt`): 8,4 min de Geyser
+Rock y Sandover. Se reproduce sin ventana con sincronía exacta (503/503 puntos), y todo lo que ya
+está en C (lotes A, B, C, target, suspend nativo) da la misma huella que x86 durante el recorrido
+completo (46166 fotogramas). Es la referencia para los lotes D, E y siguientes.
 
 ## Siguiente paso
 
-1. Nueva grabación (o antes una prueba mía de 2 min con ventana, si Diego la permite).
-2. Verificar la sincronía sin ventana; si cuadra, es el recorrido oficial.
-3. Repetir la bisección de common-obs con ese recorrido.
+Repetir la bisección de common-obs (lote D) con el recorrido oficial; generic-obs ya fallaba la
+huella con el recorrido de prueba.
