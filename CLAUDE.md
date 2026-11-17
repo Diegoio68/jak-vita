@@ -58,8 +58,7 @@ Marcados en el código entre `;; CAMBIO JAK VITA (inicio)` y `;; CAMBIO JAK VITA
 (`grep -rn "CAMBIO JAK VITA" goal_src`). Revisarlos en cada merge de upstream.
 - engine/gfx/foreground/bones.gc (draw-bones): pesos de blerc a cero (aprobado 2026-11-17).
 - engine/level/level.gc (unload!): termina el enlace en curso del nivel antes de limpiarlo
-  (cierre del juego tras saltar la intro y coger la primera célula; 2026-11-17, pendiente de
-  aprobar).
+  (cierre del juego tras saltar la intro y coger la primera célula; aprobado 2026-11-17).
 
 ## Arquitectura objetivo
 goal_src/ (GOAL decompilado, ya existe)
