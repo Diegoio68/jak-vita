@@ -234,7 +234,11 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   la memoria EE (EE_MAIN_MEM_LOW_PROTECT) se graba a cero en la imagen.
   Casos: no llamar a funciones que hagan format, lean punteros por fotograma (*ocean-work*) o
   no terminen con esos datos (time-to-ground con gravedad negativa = bucle infinito).
-  Lote A: 106 OK, 0 difieren, 3 inválidos, igual en PC y en Vita3K.
+  Lote A: 106 OK, 0 difieren, 3 inválidos, igual en PC y en Vita3K. Lote B: 34 OK.
+  Funciones declaradas none en all-types (unpack-comp-rle): g2c-arm-none, el retorno de x86
+  es basura. defun-debug (glst-*): segmento de depuración, fuera de la imagen.
+- Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
+  distintos: el inspect autogenerado depende del orden de compilación).
 
 ### Vectores y enteros de 128 bits (VECTOR_FLOAT / INT_128 -> g2c_q)
 - Semántica = la de goalc x86, que sigue la MIPS de la PS2 con src1 = rs, src2 = rt

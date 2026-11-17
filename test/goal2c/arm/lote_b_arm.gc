@@ -1,0 +1,81 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de comprobación en ARM del lote B (engine/anim, level, load, util,
+;; sound, entity, nav). Ver arm_prelude.gc (el test lo antepone).
+;; Funciones de cálculo: geometría 2D de la navegación, conversión de sonido, matrices de
+;; joint, y descompresión RLE.
+
+(defun g2c-tri ((ax float) (az float) (bx float) (bz float) (cx float) (cz float))
+  "tres nav-vertex (vectores) seguidos en la arena"
+  (let ((v (the-as (inline-array vector) (g2c-alloc 48))))
+    (set-vector! (-> v 0) ax 0.0 az 1.0)
+    (set-vector! (-> v 1) bx 0.0 bz 1.0)
+    (set-vector! (-> v 2) cx 0.0 cz 1.0)
+    v))
+
+(defun g2c-lote-b-cases ()
+  (g2c-arm-begin "lote_b")
+  ;; ---- nav: enteros ----
+  (dotimes (i 4)
+    (let ((k (+ i -1)))
+      (g2c-arm "inc-mod3" inc-mod3 k)
+      (g2c-arm "dec-mod3" dec-mod3 k)
+      (g2c-arm "sign-bit" sign-bit k)))
+  (g2c-arm "sign-bit-min" sign-bit (the-as int #x8000000000000000))
+  ;; ---- nav: geometría ----
+  (let ((tri (g2c-tri 0.0 0.0 10.0 0.0 0.0 10.0))
+        (tri2 (g2c-tri -3.5 2.25 8.0 -1.0 1.5 12.0))
+        (ntri (the-as (inline-array nav-vertex) #f))
+        (ntri2 (the-as (inline-array nav-vertex) #f))
+        (p-in (g2c-vec 2.0 5.0 3.0 1.0))
+        (p-out (g2c-vec 20.0 0.0 -4.0 1.0))
+        (p-edge (g2c-vec 5.0 0.0 0.0 1.0))
+        (d1 (g2c-vec 1.0 0.0 0.5 0.0))
+        (d2 (g2c-vec -0.25 0.0 1.0 0.0))
+        (o1 (the-as vector (g2c-alloc 16))))
+    (set! ntri (the-as (inline-array nav-vertex) tri))
+    (set! ntri2 (the-as (inline-array nav-vertex) tri2))
+    (g2c-arm "vu-point-triangle-intersection?" vu-point-triangle-intersection? p-in (-> tri 0) (-> tri 1) (-> tri 2))
+    (g2c-arm "vu-point-triangle-intersection?-out" vu-point-triangle-intersection? p-out (-> tri 0) (-> tri 1) (-> tri 2))
+    (g2c-arm "circle-triangle-intersection?" circle-triangle-intersection? p-in 1.5 ntri)
+    (g2c-arm "circle-triangle-intersection?-2" circle-triangle-intersection? p-out 9.0 ntri2)
+    (g2c-arm "circle-triangle-intersection?-3" circle-triangle-intersection? p-out 1.0 ntri)
+    (g2c-arm "point-triangle-distance-min" point-triangle-distance-min p-out 0.5 ntri)
+    (g2c-arm "point-triangle-distance-min-2" point-triangle-distance-min p-in 2.0 ntri2)
+    (g2c-arm "ray-ccw-line-segment-intersection?" ray-ccw-line-segment-intersection? p-in d1 (-> tri 1) (-> tri 2))
+    (g2c-arm "ray-ccw-line-segment-intersection?-2" ray-ccw-line-segment-intersection? p-out d2 (-> tri2 0) (-> tri2 2))
+    (g2c-arm "ray-line-segment-intersection?" ray-line-segment-intersection? p-in d1 (-> tri 1) (-> tri 2))
+    (g2c-arm "ray-line-segment-intersection?-2" ray-line-segment-intersection? p-out d2 (-> tri2 0) (-> tri2 2))
+    (g2c-arm "test-xz-point-on-line-segment?" test-xz-point-on-line-segment? p-edge (-> tri 0) (-> tri 1) 0.01)
+    (g2c-arm "test-xz-point-on-line-segment?-2" test-xz-point-on-line-segment? p-in (-> tri 0) (-> tri 1) 0.01)
+    (g2c-arm "compute-dir-parm" compute-dir-parm p-in d1 p-out)
+    (g2c-arm "clip-vector-to-halfspace!" clip-vector-to-halfspace! o1 0.6 0.8 -2.0))
+  ;; ---- sonido ----
+  (g2c-arm "sound-angle-convert" sound-angle-convert 45.0)
+  (g2c-arm "sound-angle-convert-2" sound-angle-convert -720.5)
+  (g2c-arm "sound-angle-convert-3" sound-angle-convert 359.9)
+  (let ((v3 (the-as vector3w (g2c-alloc 16)))
+        (src (g2c-vec 12345.0 -40960.5 819200.0 1.0)))
+    (g2c-arm "sound-trans-convert" sound-trans-convert v3 src))
+  ;; ---- joint ----
+  (let ((ma (g2c-mat 1.0 0.5 -0.25 0.125 2.0 -1.5 3.0 0.75))
+        (mo (g2c-mat -0.5 1.25 2.0 0.25 -3.0 1.0 0.5 -2.0)))
+    (g2c-arm "add-scaled-matrix!" add-scaled-matrix! mo ma 0.375))
+  ;; ---- load: RLE (n > 0: repetir n+1 veces el byte siguiente; n < 0: copiar -n; 0: fin) ----
+  (let ((in (the-as (pointer int8) (g2c-alloc 32)))
+        (out (the-as (pointer int8) (g2c-alloc 64))))
+    (set! (-> in 0) 3)
+    (set! (-> in 1) 77)
+    (set! (-> in 2) -4)
+    (set! (-> in 3) 1)
+    (set! (-> in 4) -2)
+    (set! (-> in 5) 3)
+    (set! (-> in 6) 127)
+    (set! (-> in 7) 9)
+    (set! (-> in 8) -1)
+    (set! (-> in 9) 0)
+    (set! (-> in 10) 0)
+    (g2c-arm-none "unpack-comp-rle" unpack-comp-rle out in))  ;; declarada none
+  ;; (glst-*: están en el segmento de depuración, fuera de la imagen)
+  (g2c-arm-end))
+
+(g2c-lote-b-cases)

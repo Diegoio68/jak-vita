@@ -528,6 +528,9 @@ void record_arm_lot(Compiler& compiler, const std::string& lot) {
 TEST_F(Goal2CTests, ArmLoteA) {
   record_arm_lot(shared->compiler, "lote_a");
 }
+TEST_F(Goal2CTests, ArmLoteB) {
+  record_arm_lot(shared->compiler, "lote_b");
+}
 
 //! Ficheros sin casos propios (game_only.txt): transpilar y comprobar que el C compila limpio.
 TEST_F(Goal2CTests, GameOnlyFiles) {
