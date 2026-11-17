@@ -525,6 +525,10 @@ void record_arm_lot(Compiler& compiler, const std::string& lot) {
   EXPECT_EQ(std::string((const char*)rec.data() + rec.size() - 4, 4), "END!");
 }
 
+TEST_F(Goal2CTests, ArmLoteA) {
+  record_arm_lot(shared->compiler, "lote_a");
+}
+
 //! Ficheros sin casos propios (game_only.txt): transpilar y comprobar que el C compila limpio.
 TEST_F(Goal2CTests, GameOnlyFiles) {
   const auto root = file_util::get_jak_project_dir();
@@ -562,6 +566,9 @@ class Goal2CMixedTests : public ::testing::Test {
                            out_dir.string(), lib_path);
     lib_build_output = run_capture(cmd);
     setenv("GOAL2C_LIB", lib_path.c_str(), 1);
+    // igual que en Goal2CTests: con GOAL2C_REC el runtime crea el builtin __g2c-rec (un objeto
+    // función en el heap). Sin él, las direcciones del heap no coincidirían con la referencia.
+    setenv("GOAL2C_REC", (out_dir / "check").string().c_str(), 1);
     shared = std::make_unique<Goal2CTests::Shared>();
     shared->compiler.run_test_no_load("test/goalc/source_templates/with_game/test-build-game.gc");
     shared->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak1);
@@ -573,6 +580,7 @@ class Goal2CMixedTests : public ::testing::Test {
     shared->runtime_thread.join();
     shared.reset();
     unsetenv("GOAL2C_LIB");
+    unsetenv("GOAL2C_REC");
   }
   static std::unique_ptr<Goal2CTests::Shared> shared;
   static std::string lib_path;

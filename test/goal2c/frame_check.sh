@@ -35,7 +35,21 @@ run() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
     awk '{print $2, $5}' > "$OUT/frame_$1_estricto.txt"
 }
 
-run a ""
+# La referencia x86 es determinista: se reutiliza mientras gk y los objetos del juego no
+# cambien (huella_ref_*.txt, con la marca de tiempo de gk y de out/jak1/obj en el nombre).
+stamp="$(stat -c %Y "$ROOT/build/game/gk")_$(ls -t "$ROOT/out/jak1/obj" | head -1 |
+  xargs -I{} stat -c %Y "$ROOT/out/jak1/obj/{}")_$SECS"
+REF="$OUT/huella_ref_$stamp"
+if [[ "${CHECK_X86_TWICE:-0}" != 1 && -s "$REF.txt" && -s "$REF.estricto.txt" ]]; then
+  cp "$REF.txt" "$OUT/frame_a.txt"
+  cp "$REF.estricto.txt" "$OUT/frame_a_estricto.txt"
+  echo "(referencia x86 reutilizada: $REF.txt)"
+else
+  run a ""
+  rm -f "$OUT"/huella_ref_*
+  cp "$OUT/frame_a.txt" "$REF.txt"
+  cp "$OUT/frame_a_estricto.txt" "$REF.estricto.txt"
+fi
 if [[ "${CHECK_X86_TWICE:-0}" == 1 ]]; then
   run b ""
   label="todo x86 (2.ª vez)"

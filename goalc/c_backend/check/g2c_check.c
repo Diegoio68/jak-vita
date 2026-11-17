@@ -86,21 +86,36 @@ uint8_t* g2c_check_addr(uintptr_t a) {
   return g_trap;
 }
 
+static const char* symbol_holding(uint32_t value);
 static uint64_t bad_call(void) {
   return 0;
 }
 
+/* Funciones parcheadas: el objeto función guarda (4 bytes, como en la Vita) un índice en esta
+   tabla, válido solo si la entrada apunta a esa misma dirección GOAL. */
+typedef struct {
+  uint32_t addr;
+  void* fn;
+} patch_entry;
+static patch_entry* g_patches;
+static uint32_t g_npatches, g_cap_patches;
+
 void* g2c_check_fn(uintptr_t a) {
-  if (a + 16 <= g_image_size) {
-    uint32_t magic;
-    memcpy(&magic, g2c_mem + a + 8, 4);
-    if (magic == G2C_CHECK_MAGIC) {
-      void* p;
-      memcpy(&p, g2c_mem + a, sizeof(void*));
-      return p;
+  if (a + 4 <= g_image_size) {
+    uint32_t i;
+    memcpy(&i, g2c_mem + a, 4);
+    if (i < g_npatches && g_patches[i].addr == a) {
+      return g_patches[i].fn;
     }
   }
-  mark_invalid("llamada a una función sin C (x86 o kernel) en", a);
+  if (!g_invalid) {
+    mark_invalid("llamada a una función sin C (x86 o kernel) en", a);
+    const char* who = symbol_holding(a);
+    if (who) {
+      size_t n = strlen(g_invalid_why);
+      snprintf(g_invalid_why + n, sizeof(g_invalid_why) - n, " (%s)", who);
+    }
+  }
   return (void*)bad_call;
 }
 
@@ -212,6 +227,18 @@ static void index_symbols(uint32_t table2, uint32_t last, uint32_t info_off) {
   qsort(g_syms, (size_t)g_nsyms, sizeof(sym_entry), sym_cmp);
 }
 
+/* nombre del símbolo cuyo valor es value (para los mensajes de diagnóstico) */
+static const char* symbol_holding(uint32_t value) {
+  for (int i = 0; i < g_nsyms; i++) {
+    uint32_t v;
+    memcpy(&v, g2c_mem + g_syms[i].addr, 4);
+    if (v == value) {
+      return g_syms[i].name;
+    }
+  }
+  return NULL;
+}
+
 static uint32_t find_symbol(const char* name) {
   sym_entry key = {name, 0};
   sym_entry* e = bsearch(&key, g_syms, (size_t)g_nsyms, sizeof(sym_entry), sym_cmp);
@@ -248,6 +275,7 @@ uint32_t g2c_rt_static(const char* obj_name, int seg, int offset) {
 /* Enlaza todos los ficheros y parchea sus objetos función en la imagen. */
 static void link_and_patch(int* nfiles, int* npatched, int* nmissing_obj) {
   *nfiles = *npatched = *nmissing_obj = 0;
+  g_npatches = 0;
   for (const g2c_file_info* const* f = g2c_check_files; *f; f++) {
     const g2c_file_info* info = *f;
     const obj_entry* o = find_obj(info->obj_name);
@@ -258,12 +286,15 @@ static void link_and_patch(int* nfiles, int* npatched, int* nmissing_obj) {
     }
     info->link();
     for (const g2c_func_entry* e = info->funcs; e->name; e++) {
-      if (e->seg < 0 || e->seg > 2 || e->length < 12) {
+      if (e->seg < 0 || e->seg > 2 || e->length < 4) {
         continue;
       }
       uint32_t seg_off = o->seg[2 * e->seg], seg_size = o->seg[2 * e->seg + 1];
       if (seg_size == 0 || (uint32_t)e->offset + 12 > seg_size) {
         continue; /* segmento no cargado (depuración) */
+      }
+      if (seg_off < 4 || (uint64_t)seg_off + (uint32_t)e->offset + 12 > g_image_size) {
+        continue; /* fuera de la imagen (objeto de un heap de nivel o de depuración) */
       }
       uint8_t* code = g2c_mem + seg_off + (uint32_t)e->offset;
       uint32_t tag;
@@ -271,11 +302,14 @@ static void link_and_patch(int* nfiles, int* npatched, int* nmissing_obj) {
       if (tag != g_function_type) {
         continue; /* no es el objeto función que esperamos: no tocar */
       }
-      void* fn = e->fn;
-      uint32_t magic = G2C_CHECK_MAGIC;
-      memset(code, 0, 8);
-      memcpy(code, &fn, sizeof(void*));
-      memcpy(code + 8, &magic, 4);
+      if (g_npatches == g_cap_patches) {
+        g_cap_patches = g_cap_patches ? 2 * g_cap_patches : 4096;
+        g_patches = realloc(g_patches, g_cap_patches * sizeof(patch_entry));
+      }
+      uint32_t idx = g_npatches++;
+      g_patches[idx].addr = (uint32_t)(code - g2c_mem);
+      g_patches[idx].fn = e->fn;
+      memcpy(code, &idx, 4);
       (*npatched)++;
     }
   }

@@ -21,6 +21,7 @@
  */
 #include "goal2c_jak1.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdlib>
@@ -47,6 +48,7 @@
 #include <csignal>
 #include <cstdio>
 #include <dlfcn.h>
+#include <sys/mman.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -338,6 +340,119 @@ void segv_handler(int sig, siginfo_t* info, void* vctx) {
   raise(sig);
 }
 
+// ---- GOAL2C_WATCH=<dirección GOAL hex>[,<bytes>]: quién escribe en esa zona (diagnóstico) ----
+// Protege la página contra escritura; cada escritura a la zona se anota (rip como dirección GOAL
+// o librería + desplazamiento, y el valor antes/después) y la instrucción se ejecuta paso a paso.
+u32 g_watch_addr = 0, g_watch_len = 0;
+u8* g_watch_page = nullptr;
+u32 g_watch_before = 0;
+bool g_watch_hit_in_range = false;
+int g_watch_count = 0;
+struct sigaction g_watch_prev_segv;
+
+void watch_describe(void* rip, char* buf, size_t n) {
+  u8* r = (u8*)rip;
+  Dl_info dli{};
+  if (r >= g_ee_main_mem && r < g_ee_main_mem + EE_MAIN_MEM_SIZE) {
+    snprintf(buf, n, "GOAL 0x%lx", (unsigned long)(r - g_ee_main_mem));
+  } else if (dladdr(rip, &dli) && dli.dli_fname) {
+    snprintf(buf, n, "%s + 0x%lx (%s)", dli.dli_fname, (unsigned long)(r - (u8*)dli.dli_fbase),
+             dli.dli_sname ? dli.dli_sname : "?");
+  } else {
+    snprintf(buf, n, "%p", rip);
+  }
+}
+
+void watch_segv(int sig, siginfo_t* info, void* vctx) {
+  u8* a = (u8*)info->si_addr;
+  if (!g_watch_page || a < g_watch_page || a >= g_watch_page + 4096) {
+    // no es nuestro: el manejador que hubiera
+    if (g_watch_prev_segv.sa_flags & SA_SIGINFO) {
+      g_watch_prev_segv.sa_sigaction(sig, info, vctx);
+    } else {
+      signal(sig, SIG_DFL);
+      raise(sig);
+    }
+    return;
+  }
+  auto* uc = (ucontext_t*)vctx;
+  u32 goal = (u32)(a - g_ee_main_mem);
+  g_watch_hit_in_range = goal + 8 > g_watch_addr && goal < g_watch_addr + g_watch_len;
+  if (g_watch_hit_in_range) {
+    memcpy(&g_watch_before, g_ee_main_mem + (goal & ~3u), 4);
+    char where[256];
+    watch_describe((void*)uc->uc_mcontext.gregs[REG_RIP], where, sizeof(where));
+    char buf[400];
+    int n = snprintf(buf, sizeof(buf), "[goal2c] WATCH escritura en 0x%x desde %s\n", goal, where);
+    (void)!write(2, buf, (size_t)n);
+    if (g_watch_count < 3) {
+      auto& g = uc->uc_mcontext.gregs;
+      n = snprintf(buf, sizeof(buf),
+                   "[goal2c] WATCH   rdi=0x%llx rsi=0x%llx rdx=0x%llx (GOAL: dst 0x%llx src 0x%llx)\n",
+                   (unsigned long long)g[REG_RDI], (unsigned long long)g[REG_RSI],
+                   (unsigned long long)g[REG_RDX], (unsigned long long)g[REG_RDI],
+                   (unsigned long long)g[REG_RSI]);
+      (void)!write(2, buf, (size_t)n);
+      u64* sp = (u64*)g[REG_RSP];
+      for (int i = 0; i < 48; i++) {
+        u8* v = (u8*)sp[i];
+        if (v >= g_ee_main_mem && v < g_ee_main_mem + EE_MAIN_MEM_SIZE) {
+          n = snprintf(buf, sizeof(buf), "[goal2c] WATCH   pila[%d] = GOAL 0x%lx\n", i,
+                       (unsigned long)(v - g_ee_main_mem));
+          (void)!write(2, buf, (size_t)n);
+        } else {
+          Dl_info d{};
+          if (dladdr(v, &d) && d.dli_fname && strstr(d.dli_fname, "goal2c")) {
+            n = snprintf(buf, sizeof(buf), "[goal2c] WATCH   pila[%d] = %s + 0x%lx\n", i,
+                         d.dli_fname, (unsigned long)(v - (u8*)d.dli_fbase));
+            (void)!write(2, buf, (size_t)n);
+          }
+        }
+      }
+    }
+  }
+  mprotect(g_watch_page, 4096, PROT_READ | PROT_WRITE | PROT_EXEC);
+  uc->uc_mcontext.gregs[REG_EFL] |= 0x100;  // paso a paso: SIGTRAP tras la instrucción
+}
+
+void watch_trap(int, siginfo_t*, void* vctx) {
+  auto* uc = (ucontext_t*)vctx;
+  uc->uc_mcontext.gregs[REG_EFL] &= ~0x100;
+  if (g_watch_hit_in_range && g_watch_count < 200) {
+    g_watch_count++;
+    char buf[200];
+    u32 after;
+    memcpy(&after, g_ee_main_mem + (g_watch_addr & ~3u), 4);
+    int n = snprintf(buf, sizeof(buf), "[goal2c] WATCH   palabra 0x%x: 0x%08x -> 0x%08x\n",
+                     g_watch_addr & ~3u, g_watch_before, after);
+    (void)!write(2, buf, (size_t)n);
+  }
+  mprotect(g_watch_page, 4096, PROT_READ | PROT_EXEC);
+}
+
+void install_watch() {
+  const char* w = std::getenv("GOAL2C_WATCH");
+  if (!w || g_watch_page) {
+    return;
+  }
+  g_watch_addr = (u32)std::strtoul(w, nullptr, 16);
+  const char* comma = strchr(w, ',');
+  g_watch_len = comma ? (u32)std::strtoul(comma + 1, nullptr, 0) : 4;
+  g_watch_page = (u8*)((uintptr_t)(g_ee_main_mem + g_watch_addr) & ~(uintptr_t)4095);
+  struct sigaction sa{};
+  sa.sa_sigaction = watch_segv;
+  sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGSEGV, &sa, &g_watch_prev_segv);
+  struct sigaction st{};
+  st.sa_sigaction = watch_trap;
+  st.sa_flags = SA_SIGINFO;
+  sigemptyset(&st.sa_mask);
+  sigaction(SIGTRAP, &st, nullptr);
+  mprotect(g_watch_page, 4096, PROT_READ | PROT_EXEC);
+  lg::info("[goal2c] WATCH activo en 0x{:x} ({} bytes)", g_watch_addr, g_watch_len);
+}
+
 void install_segv_handler() {
   struct sigaction sa{};
   sa.sa_sigaction = segv_handler;
@@ -445,8 +560,18 @@ u64 g2c_rec(u64 cmd, u64 a, u64 b, u64 c) {
         lg::error("[goal2c] no se puede escribir {}", img_path);
         return 0;
       }
-      fwrite(g_ee_main_mem, 1, image_size, img);
+      // la zona baja está protegida (PROT_NONE, para cazar punteros nulos): write() daría
+      // EFAULT y la imagen saldría vacía. Se graba a cero.
+      std::vector<u8> low(EE_MAIN_MEM_LOW_PROTECT, 0);
+      bool ok = fwrite(low.data(), 1, low.size(), img) == low.size() &&
+                fwrite(g_ee_main_mem + EE_MAIN_MEM_LOW_PROTECT, 1,
+                       image_size - EE_MAIN_MEM_LOW_PROTECT,
+                       img) == image_size - EE_MAIN_MEM_LOW_PROTECT;
       fclose(img);
+      if (!ok) {
+        lg::error("[goal2c] ERROR al escribir {}", img_path);
+        return 0;
+      }
       g_rec = fopen(fmt::format("{}/{}.rec", dir, name).c_str(), "wb");
       g_rec_arena = (u32)b;
       g_rec_arena_size = (u32)c;
@@ -480,6 +605,10 @@ u64 g2c_rec(u64 cmd, u64 a, u64 b, u64 c) {
     case 2:
       g_rec_label = goal_string((u32)a);
       g_rec_fn = symbol_name((u32)b);
+      if (g_rec) {
+        fflush(g_rec);
+      }
+      lg::debug("[goal2c] caso ARM {} ({})", g_rec_label, g_rec_fn);
       g_rec_flags = (u32)c;
       g_rec_before.assign(g_ee_main_mem + g_rec_arena,
                           g_ee_main_mem + g_rec_arena + g_rec_arena_size);
@@ -526,6 +655,7 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   if (obj == "gcommon") {
     // primer objeto del kernel: arranque de un runtime nuevo (los tests arrancan varios)
     g_obj_segments.clear();
+    install_watch();
     if (std::getenv("GOAL2C_REC")) {
       jak1::make_function_symbol_from_c("__g2c-rec", (void*)g2c_rec);
     }
@@ -726,6 +856,28 @@ void frame_fingerprint(u32 chain) {
     dump = fopen(path.c_str(), "wb");
     lg::info("[huella] volcado en {}", path);
   }
+  // Pila de los procesos (*dram-stack*, 32 KB en el heap global). Algunas estructuras se crean
+  // con (new 'stack ...) y la cadena DMA las referencia ahí mismo: cuando se envía la cadena, el
+  // resto de esa zona tiene lo que dejaron llamadas posteriores (direcciones de retorno, marcos
+  // de C o x86, temporales). Esos bytes se enmascaran; el hash estricto los incluye.
+  // Igual con la pila del scratchpad falso del PC (*fake-scratchpad-stack*: 64 KB, cima de la
+  // pila en +32 KB; la parte baja son datos de trabajo y SÍ se comparan). Cuando se envía la
+  // cadena no corre ningún proceso: las dos pilas están muertas.
+  struct Range {
+    u32 lo, hi;
+  };
+  Range stacks[2] = {{0, 0}, {0, 0}};
+  if (auto ds = jak1::find_symbol_from_c("*dram-stack*"); ds.offset) {
+    if (u32 arr = *Ptr<u32>(ds.offset).c()) {
+      stacks[0] = {arr - 16, arr + 0x8000 + 16};
+    }
+  }
+  if (auto fs = jak1::find_symbol_from_c("*fake-scratchpad-stack*"); fs.offset) {
+    if (u32 base = *Ptr<u32>(fs.offset).c()) {
+      stacks[1] = {base + 0x4000, base + 0x8000 + 16};
+    }
+  }
+  u64 stack_masked = 0;
   DmaFollower dma(g_ee_main_mem, chain);
   u64 transfers = 0, bytes = 0;
   std::vector<u8> masked;
@@ -738,7 +890,22 @@ void frame_fingerprint(u32 chain) {
     // código original deja ahí lo que haya en la pila (vectores 'stack-no-clear), y eso cambia
     // entre ejecuciones y entre x86 y C sin que cambie la imagen.
     u32 vif1_cmd = (u32)(t.transferred_tag >> 56) & 0x7f;
-    if ((vif1_cmd == 0x50 || vif1_cmd == 0x51) && t.size_bytes) {
+    u32 d_lo = t.data_offset, d_hi = t.data_offset + t.size_bytes;
+    bool in_stack = false;
+    for (auto& r : stacks) {
+      in_stack |= t.size_bytes && r.hi && d_lo < r.hi && d_hi > r.lo;
+    }
+    if (in_stack) {
+      masked.assign(t.data, t.data + t.size_bytes);
+      for (auto& r : stacks) {
+        if (r.hi && d_lo < r.hi && d_hi > r.lo) {
+          u32 from = std::max(d_lo, r.lo) - d_lo, to = std::min(d_hi, r.hi) - d_lo;
+          memset(masked.data() + from, 0, to - from);
+          stack_masked += to - from;
+        }
+      }
+      mix(masked.data(), t.size_bytes);
+    } else if ((vif1_cmd == 0x50 || vif1_cmd == 0x51) && t.size_bytes) {
       masked.assign(t.data, t.data + t.size_bytes);
       mask_gif_ignored(masked.data(), t.size_bytes);
       mix(masked.data(), t.size_bytes);
@@ -761,9 +928,24 @@ void frame_fingerprint(u32 chain) {
   }
   if (dump) {
     fclose(dump);
+    // GOAL2C_HUELLA_QUE=<dirección hex>: qué objetos hay justo antes de esa dirección
+    if (const char* que = std::getenv("GOAL2C_HUELLA_QUE")) {
+      u32 addr = (u32)std::strtoul(que, nullptr, 16);
+      u32 type_type = *(s7 + FIX_SYM_TYPE_TYPE);
+      int found = 0;
+      for (u32 a = addr & ~3u; a > 0x100000 && a + 0x2000 > addr && found < 6; a -= 4) {
+        u32 t = *Ptr<u32>(a).c();
+        if (t > 0x100000 && t < 0x8000000 && (t & 7) == 4 && *Ptr<u32>(t - 4).c() == type_type) {
+          u32 sym = *Ptr<u32>(t).c();  // type: symbol en +0
+          lg::info("[huella] 0x{:x}: objeto de tipo {} con etiqueta en 0x{:x} (+0x{:x})", addr,
+                   sym ? symbol_name(sym) : "?", a, addr - a);
+          found++;
+        }
+      }
+    }
   }
-  lg::info("[huella] {} {:016x} estricto {:016x} ({} transferencias, {} bytes)",
-           g_fingerprint_frame++, h, hs, transfers, bytes);
+  lg::info("[huella] {} {:016x} estricto {:016x} ({} transferencias, {} bytes, {} en la pila)",
+           g_fingerprint_frame++, h, hs, transfers, bytes, stack_masked);
 }
 
 #else  // !GOAL2C_MIXED_SUPPORTED

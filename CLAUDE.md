@@ -210,7 +210,16 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   de depuración cambia cada fotograma). Se enmascara la 4.ª palabra de STQ (GIF PACKED y
   UNPACK V4-32 con Q=1.0): GOAL la deja indefinida (movss sobre un registro: en x86 queda lo
   anterior, en C 0). `CHECK_X86_TWICE=1` = x86 contra x86 (0 diferencias en 26000 fotogramas).
-  `GOAL2C_HUELLA_VOLCADO=<n>` vuelca el fotograma n para compararlo con cmp.
+  `GOAL2C_HUELLA_VOLCADO=<n>` vuelca el fotograma n para compararlo con cmp;
+  `GOAL2C_HUELLA_QUE=<addr>` dice de dónde sale un byte del volcado. También se enmascaran las
+  pilas muertas (`*dram-stack*` y `*fake-scratchpad-stack*`), que el DMA puede arrastrar.
+- `GOAL2C_WATCH=<addr>[,len]`: watchpoint casero (mprotect + paso a paso) que registra quién
+  escribe en esa dirección GOAL (rip, argumentos y direcciones GOAL de la pila).
+- Lote A (2026-11-17): los dos "culpables" (connect, drawable) eran basura de pila: draw-bones
+  solo rellena los pesos de blerc del modelo y pc-merc-draw-request copia los 40 a la cadena
+  DMA. Corregido EN goal_src (bones.gc los pone a cero; pendiente de revisión por Diego).
+- goalc-test SIEMPRE con `timeout`: si el runtime cae, el test siguiente se queda esperando
+  para siempre (se perdió una noche así).
 - Comprobación en ARM por lote: casos en test/goal2c/arm/<lote>_arm.gc (preludio
   arm_prelude.gc), grabados en x86 por Goal2CTests.Arm<Lote> con GOAL2C_REC: imagen de la
   memoria GOAL + arena antes/después + retorno en out/goal2c/jak1/check/. Reproducción:
@@ -218,7 +227,14 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   (como hará el cargador de la Vita) y compara; NaN sin signo. En PC:
   `python3 goalc/c_backend/tools/build_check.py --run <lote>`; en la Vita: app JAKV00003,
   `cmake -S vita -B build-vita && cmake --build build-vita && APP=check vita/tools/emu_test.sh`.
-  Caso INVALIDO = llama a algo sin C o lee fuera de la imagen: cambiar el caso, no es fallo.
+  Caso INVALIDO = llama a algo sin C o lee fuera de la imagen: cambiar el caso, no es fallo
+  (el mensaje dice el símbolo llamado; p. ej. `new 'stack` llama al new del kernel).
+  El parche son 4 bytes (índice en una tabla que debe apuntar a esa dirección), como el puntero
+  de la Vita: hay funciones de solo 6 bytes de código (sphere-cull). La zona baja protegida de
+  la memoria EE (EE_MAIN_MEM_LOW_PROTECT) se graba a cero en la imagen.
+  Casos: no llamar a funciones que hagan format, lean punteros por fotograma (*ocean-work*) o
+  no terminen con esos datos (time-to-ground con gravedad negativa = bucle infinito).
+  Lote A: 106 OK, 0 difieren, 3 inválidos, igual en PC y en Vita3K.
 
 ### Vectores y enteros de 128 bits (VECTOR_FLOAT / INT_128 -> g2c_q)
 - Semántica = la de goalc x86, que sigue la MIPS de la PS2 con src1 = rs, src2 = rt
