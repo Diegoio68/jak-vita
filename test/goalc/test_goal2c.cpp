@@ -403,6 +403,44 @@ const Goal2CFile kGameFiles[] = {
     {"quaternion", "goal_src/jak1/engine/math/quaternion.gc", "\"slerp\" "},
     {"trigonometry", "goal_src/jak1/engine/math/trigonometry.gc", "\"atan\" "},
     {"euler", "goal_src/jak1/engine/math/euler.gc", "\"eul->matrix\" "},
+    {"geometry", "goal_src/jak1/engine/geometry/geometry.gc", "\"flatten\" "},
+    {"bounding-box", "goal_src/jak1/engine/geometry/bounding-box.gc", "\"add-box\" "},
+    {"cylinder", "goal_src/jak1/engine/geometry/cylinder.gc", "\"capsule-1\" "},
+    {"collide-func", "goal_src/jak1/engine/collide/collide-func.gc", "\"ray-sphere\" "},
+};
+
+//! Ficheros validados solo dentro del juego (necesitan niveles, procesos, colisión real...):
+//! objeto idéntico, C que compila limpio, funciones instaladas por el runtime y la prueba de
+//! humo / comprobación de colisión con el juego real (test/goal2c/boot_smoke.sh).
+const Goal2CFile kGameOnlyFiles[] = {
+    {"bounding-box-h", "goal_src/jak1/engine/geometry/bounding-box-h.gc", ""},
+    {"geometry-h", "goal_src/jak1/engine/geometry/geometry-h.gc", ""},
+    {"surface-h", "goal_src/jak1/engine/collide/surface-h.gc", ""},
+    {"pat-h", "goal_src/jak1/engine/collide/pat-h.gc", ""},
+    {"collide-func-h", "goal_src/jak1/engine/collide/collide-func-h.gc", ""},
+    {"collide-mesh-h", "goal_src/jak1/engine/collide/collide-mesh-h.gc", ""},
+    {"collide-shape-h", "goal_src/jak1/engine/collide/collide-shape-h.gc", ""},
+    {"collide-target-h", "goal_src/jak1/engine/collide/collide-target-h.gc", ""},
+    {"collide-touch-h", "goal_src/jak1/engine/collide/collide-touch-h.gc", ""},
+    {"collide-edge-grab-h", "goal_src/jak1/engine/collide/collide-edge-grab-h.gc", ""},
+    {"collide-frag-h", "goal_src/jak1/engine/collide/collide-frag-h.gc", ""},
+    {"collide-cache-h", "goal_src/jak1/engine/collide/collide-cache-h.gc", ""},
+    {"collide-h", "goal_src/jak1/engine/collide/collide-h.gc", ""},
+    {"path-h", "goal_src/jak1/engine/geometry/path-h.gc", ""},
+    {"collide-probe", "goal_src/jak1/engine/collide/collide-probe.gc", ""},
+    {"collide-frag", "goal_src/jak1/engine/collide/collide-frag.gc", ""},
+    {"collide-mesh", "goal_src/jak1/engine/collide/collide-mesh.gc", ""},
+    {"collide-touch", "goal_src/jak1/engine/collide/collide-touch.gc", ""},
+    {"collide-edge-grab", "goal_src/jak1/engine/collide/collide-edge-grab.gc", ""},
+    {"collide-shape", "goal_src/jak1/engine/collide/collide-shape.gc", ""},
+    {"collide-shape-rider", "goal_src/jak1/engine/collide/collide-shape-rider.gc", ""},
+    {"collide", "goal_src/jak1/engine/collide/collide.gc", ""},
+    // collide-planes no está: aparece en all_objs.json pero no tiene fuente .gc en OpenGOAL
+    {"vol-h", "goal_src/jak1/engine/geometry/vol-h.gc", ""},
+    {"main-collide", "goal_src/jak1/engine/collide/main-collide.gc", ""},
+    {"collide-cache", "goal_src/jak1/engine/collide/collide-cache.gc", ""},
+    {"path", "goal_src/jak1/engine/geometry/path.gc", ""},
+    {"vol", "goal_src/jak1/engine/geometry/vol.gc", ""},
 };
 
 //! Transpila el fichero, comprueba que su C compila limpio y guarda la referencia de goalc
@@ -443,6 +481,34 @@ TEST_F(Goal2CTests, Trigonometry) {
 }
 TEST_F(Goal2CTests, Euler) {
   transpile_and_reference(shared->compiler, kGameFiles[5]);
+}
+TEST_F(Goal2CTests, Geometry) {
+  transpile_and_reference(shared->compiler, kGameFiles[6]);
+}
+TEST_F(Goal2CTests, BoundingBox) {
+  transpile_and_reference(shared->compiler, kGameFiles[7]);
+}
+TEST_F(Goal2CTests, Cylinder) {
+  transpile_and_reference(shared->compiler, kGameFiles[8]);
+}
+TEST_F(Goal2CTests, CollideFunc) {
+  transpile_and_reference(shared->compiler, kGameFiles[9]);
+}
+//! collide/geometry sin casos propios: transpilar y comprobar que el C compila limpio.
+TEST_F(Goal2CTests, CollideGeometryGameOnly) {
+  const auto root = file_util::get_jak_project_dir();
+  const auto out_dir = root / "out" / "goal2c" / "jak1";
+  for (auto& f : kGameOnlyFiles) {
+    const auto c_file = out_dir / (std::string(f.obj) + ".c");
+    shared->compiler.run_front_end_on_string(
+        fmt::format("(asm-file \"{}\" :goal2c \"{}\")", f.src, c_file.string()));
+    ASSERT_TRUE(fs::exists(c_file)) << f.obj;
+    auto out = run_capture(
+        fmt::format("cc -std=c11 -O2 -Wall -Wextra -Werror -c -I{} {} -o {} 2>&1; echo EXIT=$?",
+                    (root / "goalc" / "c_backend" / "runtime").string(), c_file.string(),
+                    (out_dir / (std::string(f.obj) + "_check.o")).string()));
+    EXPECT_NE(out.find("EXIT=0"), std::string::npos) << f.obj << "\n" << out;
+  }
 }
 
 /*!
@@ -588,4 +654,32 @@ TEST_F(Goal2CMixedTests, TrigonometryInGame) {
 }
 TEST_F(Goal2CMixedTests, EulerInGame) {
   compare_in_game(shared->compiler, lib_build_output, kGameFiles[5]);
+}
+TEST_F(Goal2CMixedTests, GeometryInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[6]);
+}
+TEST_F(Goal2CMixedTests, BoundingBoxInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[7]);
+}
+TEST_F(Goal2CMixedTests, CylinderInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[8]);
+}
+TEST_F(Goal2CMixedTests, CollideFuncInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[9]);
+}
+//! Los ficheros sin casos: objeto idéntico al que carga el juego y funciones instaladas.
+//! (Las cabeceras -h sin funciones propias no instalan nada: solo se exige el objeto.)
+TEST_F(Goal2CMixedTests, CollideGeometryGameOnly) {
+  const auto root = file_util::get_jak_project_dir();
+  const auto out_dir = root / "out" / "goal2c" / "jak1";
+  int total = 0;
+  for (auto& f : kGameOnlyFiles) {
+    const std::string obj = f.obj;
+    EXPECT_EQ(file_util::read_binary_file(out_dir / (obj + ".c.o")),
+              file_util::read_binary_file(root / "out" / "jak1" / "obj" / (obj + ".o")))
+        << obj;
+    total += goal2c_runtime::replaced_functions(obj.c_str());
+  }
+  lg::print("[goal2c] collide/geometry sin casos: {} funciones en C dentro del juego\n", total);
+  EXPECT_GT(total, 0);
 }

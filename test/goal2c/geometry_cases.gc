@@ -1,0 +1,82 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/geometry/geometry.gc (goalc x86 frente a goal2c en el juego).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+;; Se omiten circle-test y circle-circle-xz-intersect (trampas (crash!) de OpenGOAL, sin uso
+;; en el juego) y las curvas (necesitan datos de nivel).
+
+(define *g2c-ga* (new 'global 'vector))
+(define *g2c-gb* (new 'global 'vector))
+(define *g2c-gc* (new 'global 'vector))
+(define *g2c-gd* (new 'global 'vector))
+(define *g2c-go* (new 'global 'vector))
+(define *g2c-gq* (new 'global 'quaternion))
+(define *g2c-gq2* (new 'global 'quaternion))
+(define *g2c-gm* (new 'global 'matrix))
+(define *g2c-gm2* (new 'global 'matrix))
+(define *g2c-gs1* (new 'global 'sphere))
+(define *g2c-gs2* (new 'global 'sphere))
+
+(defun g2c-geo-reset ()
+  (g2c-set! *g2c-ga* 1.0 2.0 3.0 1.0)
+  (g2c-set! *g2c-gb* 0.0 1.0 0.0 0.0)      ;; normal "arriba"
+  (g2c-set! *g2c-gc* -4.0 0.5 2.0 1.0)
+  (g2c-set! *g2c-gd* 0.6 0.0 0.8 0.0)      ;; dirección unitaria
+  (g2c-set! *g2c-go* 77.0 77.0 77.0 77.0)
+  (g2c-set! *g2c-gq* 0.1825742 0.3651484 0.5477226 0.7302967)
+  (g2c-set! *g2c-gq2* 0.0 0.0 0.0 1.0)
+  (matrix-identity! *g2c-gm2*)
+  (g2c-setm! *g2c-gm*
+             0.8 0.0 -0.6 0.0
+             0.0 1.0 0.0 0.0
+             0.6 0.0 0.8 0.0
+             1.0 2.0 3.0 1.0)
+  0)
+
+(defun g2c-geometry-cases ()
+  (let ((a *g2c-ga*) (b *g2c-gb*) (c *g2c-gc*) (d *g2c-gd*) (o *g2c-go*) (m *g2c-gm*))
+    (g2c-geo-reset) (g2c-pv "flatten" (vector-flatten! o a b))
+    (g2c-geo-reset) (g2c-pv "reflect" (vector-reflect! o a b))
+    (g2c-geo-reset) (g2c-pv "reflect-flat" (vector-reflect-flat! o a b))
+    (g2c-geo-reset) (g2c-pv "reflect-true-flat" (vector-reflect-true-flat! o a b))
+    (g2c-geo-reset) (g2c-pv "reflect-flat-above" (vector-reflect-flat-above! o a b))
+    (g2c-geo-reset) (g2c-pf "segment-distance" (vector-segment-distance-point! a c (g2c-set! o 5.0 5.0 5.0 1.0) d))
+    (g2c-geo-reset) (g2c-pf "line-distance" (vector-line-distance a c d))
+    (g2c-geo-reset) (g2c-pf "line-distance-point" (vector-line-distance-point! a c d o))
+    (g2c-geo-reset) (g2c-pv "orient-by-quat" (vector-orient-by-quat! o a *g2c-gq*))
+    (g2c-geo-reset) (g2c-pm "forward-down->inv" (forward-down->inv-matrix m d (g2c-set! c 0.0 -1.0 0.0 0.0)))
+    (g2c-geo-reset) (g2c-pm "forward-down-nopitch->inv" (forward-down-nopitch->inv-matrix m d (g2c-set! c 0.0 -1.0 0.0 0.0)))
+    (g2c-geo-reset) (g2c-pm "forward-up-nopitch->inv" (forward-up-nopitch->inv-matrix m d b))
+    (g2c-geo-reset) (g2c-pv "forward-up-nopitch->q" (forward-up-nopitch->quaternion *g2c-gq* d b))
+    (g2c-geo-reset) (g2c-pv "forward-up->q" (forward-up->quaternion *g2c-gq* d b))
+    (g2c-geo-reset) (g2c-pv "q-from-two" (quaternion-from-two-vectors! *g2c-gq* d b))
+    (g2c-geo-reset) (g2c-pv "q-from-two-max" (quaternion-from-two-vectors-max-angle! *g2c-gq* d b 3000.0))
+    (g2c-geo-reset) (g2c-pm "m-from-two" (matrix-from-two-vectors! m d b))
+    (g2c-geo-reset) (g2c-pm "m-from-two-max" (matrix-from-two-vectors-max-angle! m d b 3000.0))
+    (g2c-geo-reset) (g2c-pm "m-from-two-max-partial" (matrix-from-two-vectors-max-angle-partial! m d b 3000.0 0.5))
+    (g2c-geo-reset) (g2c-pm "m-from-two-partial-linear" (matrix-from-two-vectors-partial-linear! m d b 0.25))
+    (g2c-geo-reset) (g2c-pm "remove-z-rot" (matrix-remove-z-rot *g2c-gm2* m))
+    (g2c-geo-reset) (g2c-pf "rot-diff" (matrix-rot-diff! o m *g2c-gm2*))
+    (g2c-pv "rot-diff-v" o)
+    (g2c-geo-reset) (g2c-pv "quaternion-seek" (quaternion-seek *g2c-gq2* *g2c-gq2* *g2c-gq* 0.1 0.2))
+    (g2c-geo-reset) (g2c-pv "deg-seek" (vector-deg-seek o (g2c-set! a 1000.0 -2000.0 30000.0 0.0) (g2c-set! c 64000.0 2000.0 -30000.0 0.0) 1500.0))
+    (g2c-geo-reset) (g2c-pv "deg-slerp" (vector-deg-slerp o (g2c-set! a 1000.0 -2000.0 30000.0 0.0) (g2c-set! c 64000.0 2000.0 -30000.0 0.0) 0.4))
+    (g2c-geo-reset) (g2c-pv "vector-deg-slerp" (vector-vector-deg-slerp! o d b 0.3 a))
+    (g2c-geo-reset) (g2c-pv "normal-of-plane" (normal-of-plane o a c (g2c-set! d 0.0 5.0 1.0 1.0)))
+    (g2c-geo-reset) (g2c-pv "3pt-cross" (vector-3pt-cross! o a c (g2c-set! d 0.0 5.0 1.0 1.0)))
+    ;; closest-pt-in-triangle devuelve none: se imprime la salida
+    (g2c-geo-reset)
+    (g2c-setm! m 0.0 0.0 0.0 1.0  4.0 0.0 0.0 1.0  0.0 0.0 4.0 1.0  0.0 0.0 0.0 0.0)
+    (closest-pt-in-triangle o (g2c-set! a 3.0 2.0 3.0 1.0) m b)
+    (g2c-pv "closest-pt-in-triangle" o)
+    (g2c-geo-reset)
+    (g2c-pb "point-in-triangle" (point-in-triangle-cross (g2c-set! a 1.0 0.0 1.0 1.0) b (g2c-set! c 0.0 0.0 0.0 1.0) (g2c-set! d 4.0 0.0 0.0 1.0) (g2c-set! o 0.0 0.0 4.0 1.0)))
+    (g2c-geo-reset) (g2c-pv "point-in-plane" (point-in-plane-<-point+normal! o a b))
+    ;; circle-circle-xz-intersect NO se prueba: el juego no la usa y OpenGOAL la dejó como
+    ;; (crash!) a propósito.
+    ;; vector-circle-tangent* devuelven none
+    ;; vector-circle-tangent-new tampoco: llama a circle-circle-xz-intersect (crash!).
+    (g2c-geo-reset) (vector-circle-tangent o (g2c-set! a 5.0 0.0 5.0 1.0) (g2c-set! c 0.0 0.0 0.0 2.0) d)
+    (g2c-pv "circle-tangent" o))
+  0)
+
+(g2c-geometry-cases)

@@ -1,0 +1,36 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/collide/collide-func.gc (goalc x86 frente a goal2c).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+
+(define *g2c-ro* (new 'global 'vector))
+(define *g2c-rd* (new 'global 'vector))
+(define *g2c-rs* (new 'global 'vector))
+(define *g2c-ra* (new 'global 'vector))
+(define *g2c-rp1* (new 'global 'vector))
+(define *g2c-rp2* (new 'global 'vector))
+(define *g2c-rp3* (new 'global 'vector))
+(define *g2c-rout* (new 'global 'vector))
+
+(defun g2c-collide-func-cases ()
+  ;; ray-sphere: de lleno, tangente, falla, origen dentro
+  (g2c-pf "ray-sphere" (ray-sphere-intersect (g2c-set! *g2c-ro* -10.0 0.0 0.0 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0) (g2c-set! *g2c-rs* 0.0 0.5 0.0 1.0) 2.0))
+  (g2c-pf "ray-sphere-tangente" (ray-sphere-intersect (g2c-set! *g2c-ro* -10.0 2.0 0.0 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0) (g2c-set! *g2c-rs* 0.0 0.0 0.0 1.0) 2.0))
+  (g2c-pf "ray-sphere-falla" (ray-sphere-intersect (g2c-set! *g2c-ro* -10.0 5.0 0.0 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0) (g2c-set! *g2c-rs* 0.0 0.0 0.0 1.0) 2.0))
+  (g2c-pf "ray-sphere-dentro" (ray-sphere-intersect (g2c-set! *g2c-ro* 0.5 0.0 0.0 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0) (g2c-set! *g2c-rs* 0.0 0.0 0.0 1.0) 2.0))
+  (g2c-pf "ray-circle" (ray-circle-intersect (g2c-set! *g2c-ro* -10.0 3.0 0.5 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0) (g2c-set! *g2c-rs* 0.0 0.0 0.0 1.0) 2.0))
+  (g2c-pf "ray-cylinder" (ray-cylinder-intersect (g2c-set! *g2c-ro* -10.0 3.0 0.5 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0)
+                                                 (g2c-set! *g2c-rs* 0.0 0.0 0.0 1.0) (g2c-set! *g2c-ra* 0.0 1.0 0.0 0.0) 2.0 8.0 *g2c-rout*))
+  (g2c-pv "ray-cylinder-punto" *g2c-rout*)
+  (g2c-pf "ray-plane" (ray-plane-intersect *g2c-rout* (g2c-set! *g2c-ra* 0.0 0.0 0.0 0.0)
+                                           (g2c-set! *g2c-ro* 1.0 5.0 1.0 1.0) (g2c-set! *g2c-rd* 0.0 -10.0 0.5 1.0)
+                                           (g2c-set! *g2c-rp1* 0.0 0.0 0.0 1.0) (g2c-set! *g2c-rp2* 4.0 0.0 0.0 1.0) (g2c-set! *g2c-rp3* 0.0 0.0 4.0 1.0)))
+  (g2c-pv "ray-plane-punto" *g2c-rout*)
+  (g2c-pv "ray-plane-normal" *g2c-ra*)
+  (g2c-pf "moving-sphere" (moving-sphere-sphere-intersect (g2c-set! *g2c-ro* -10.0 0.0 0.0 1.0) (g2c-set! *g2c-rd* 20.0 0.0 0.0 1.0)
+                                                           (g2c-set! *g2c-rs* 0.0 0.5 0.0 1.5) *g2c-rout*))
+  (g2c-pv "moving-sphere-punto" *g2c-rout*)
+  ;; raw-ray-sphere-intersect NO se prueba: recibe datos en registros vf y OpenGOAL la dejó como
+  ;; (crash!); el juego usa pc-port-raw-ray-sphere-implementation (vía ray-sphere-intersect).
+  0)
+
+(g2c-collide-func-cases)

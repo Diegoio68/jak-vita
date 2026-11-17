@@ -125,8 +125,23 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   `__asm__ volatile("" : : "r"(g2c_stk) : "memory")` tras declararlo y que G2C_ADDR calcule
   la dirección como entero: si no, gcc -O2 no le reserva sitio en el marco (solo ve su
   dirección como entero) y las llamadas lo machacan (fallo real visto en euler.gc).
-- Validados en el juego (2026-11-16): math 19, vector 68, matrix 43, transform 5,
-  quaternion 52/53, trigonometry 38, euler 5 (quaternion-validate lee pp; pendiente).
+- pp (r13: self en behaviors, with-pp) -> G2C_PP, variable global del runtime (en modo mixto
+  apunta al g_pp del runtime). self NO es argumento de la firma C. rsp/r14/r15 son de solo
+  lectura (G2C_SP_REG = marco de C actual, tabla de símbolos = #f, G2C_BASE_REG = g2c_mem).
+- Validados en el juego (2026-11-16): engine/math entero, engine/geometry y engine/collide
+  (con casos: geometry, bounding-box, cylinder, collide-func; el resto "solo en el juego").
+- Funciones TRAMPA de OpenGOAL (no las usa el juego; abortan a propósito con (crash!) o
+  (/ 0 0)): matrix-axis-sin-cos-vu!, circle-circle-xz-intersect (y vector-circle-tangent-new,
+  que la llama), raw-ray-sphere-intersect, dma-sync-crash. No llamarlas en los casos.
+- Ficheros "solo en el juego" (tabla kGameOnlyFiles): objeto idéntico, C que compila limpio,
+  funciones instaladas, prueba de humo y, para colisión, `test/goal2c/collide_check.sh`:
+  posición de Jak en reposo, todo x86 frente a modo mixto, debe ser idéntica bit a bit
+  (comprobado con mutación: collide-cache roto -> Jak a otra altura).
+- Hablar con el juego desde un script: REPL de goalc por tubería, línea a línea
+  ((mi), (lt), consulta, (:exit) con esperas). `goalc -c` NO sirve: compila antes de conectar.
+- Cuidado con lecturas de 16 bytes de estructuras de 12 (vector3s): arrastran 4 bytes del
+  heap, distintos en cada runtime; en los casos, guardarlas dentro de un vector.
+- collide-planes aparece en all_objs.json pero no tiene fuente .gc en OpenGOAL.
 
 ### Contador de avance (reportarlo en UNA línea al final de cada entrega)
 - `python3 goalc/c_backend/tools/progress.py` (unos 20 s; `--reuse` no recompila). Ejecuta
@@ -135,7 +150,8 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   total de funciones, traducibles (goal2c las traduce) y en C (validadas en el juego = los .c
   de out/goal2c/jak1/). Tabla por carpeta en out/goal2c/jak1/progress.txt.
 - Línea a copiar al final de la entrega: la última que imprime ("Avance goal2c: ...").
-- Bloqueo principal (2026-11-16): 4199 funciones usan pp (rlet sobre r13: self/procesos).
+- Bloqueos tras soportar pp (2026-11-16): llamadas con argumentos/retorno de 128 bits (ABI
+  xmm), lambdas anónimas (mov-fa) y variables con la dirección tomada; ver progress.py.
 - OBLIGATORIO además: `test/goal2c/boot_smoke.sh` (juego real sin ventana 45 s con la
   librería; exige que no falle, que instale funciones y que avance tras cargar el nivel).
   Los tests de goalc-test NO ejecutan código en la pila x86 nativa; el juego sí.

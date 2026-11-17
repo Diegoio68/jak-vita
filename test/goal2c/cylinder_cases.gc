@@ -1,0 +1,36 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/geometry/cylinder.gc (goalc x86 frente a goal2c).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+;; No se prueban los debug-draw (dibujo de depuración).
+
+(define *g2c-cyl* (new 'global 'cylinder))
+(define *g2c-cylf* (new 'global 'cylinder-flat))
+(define *g2c-co* (new 'global 'vector))
+(define *g2c-cd* (new 'global 'vector))
+(define *g2c-cn* (new 'global 'vector))
+
+(defun g2c-cyl-setup ()
+  (g2c-set! (-> *g2c-cyl* origin) 0.0 0.0 0.0 1.0)
+  (g2c-set! (-> *g2c-cyl* axis) 0.0 1.0 0.0 0.0)
+  (set! (-> *g2c-cyl* radius) 2.0)
+  (set! (-> *g2c-cyl* length) 10.0)
+  (g2c-set! (-> *g2c-cylf* origin) 1.0 0.0 1.0 1.0)
+  (g2c-set! (-> *g2c-cylf* axis) 0.0 0.0 1.0 0.0)
+  (set! (-> *g2c-cylf* radius) 1.5)
+  (set! (-> *g2c-cylf* length) 4.0)
+  0)
+
+(defun g2c-cylinder-cases ()
+  (g2c-cyl-setup)
+  ;; rayos que dan de lleno, rozan, fallan y paralelos al eje
+  (g2c-pf "capsule-1" (ray-capsule-intersect *g2c-cyl* (g2c-set! *g2c-co* -10.0 5.0 0.0 1.0) (g2c-set! *g2c-cd* 20.0 0.0 0.0 1.0)))
+  (g2c-pf "capsule-2" (ray-capsule-intersect *g2c-cyl* (g2c-set! *g2c-co* -10.0 5.0 1.99 1.0) (g2c-set! *g2c-cd* 20.0 0.0 0.0 1.0)))
+  (g2c-pf "capsule-falla" (ray-capsule-intersect *g2c-cyl* (g2c-set! *g2c-co* -10.0 5.0 3.0 1.0) (g2c-set! *g2c-cd* 20.0 0.0 0.0 1.0)))
+  (g2c-pf "capsule-tapa" (ray-capsule-intersect *g2c-cyl* (g2c-set! *g2c-co* 0.5 30.0 0.0 1.0) (g2c-set! *g2c-cd* 0.0 -40.0 0.0 1.0)))
+  (g2c-pf "flat-1" (ray-flat-cyl-intersect *g2c-cylf* (g2c-set! *g2c-co* 1.0 -10.0 2.0 1.0) (g2c-set! *g2c-cd* 0.0 20.0 0.0 1.0)))
+  (g2c-pf "flat-falla" (ray-flat-cyl-intersect *g2c-cylf* (g2c-set! *g2c-co* 9.0 -10.0 2.0 1.0) (g2c-set! *g2c-cd* 0.0 20.0 0.0 1.0)))
+  (g2c-pf "arbitrary-circle" (ray-arbitrary-circle-intersect (g2c-set! *g2c-co* 0.5 5.0 0.5 1.0) (g2c-set! *g2c-cd* 0.0 -10.0 0.0 1.0)
+                                                             (g2c-set! *g2c-cn* 0.0 0.0 0.0 1.0) (g2c-set! (-> *g2c-cyl* origin) 0.0 1.0 0.0 0.0) 2.0))
+  0)
+
+(g2c-cylinder-cases)

@@ -1,0 +1,48 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/geometry/bounding-box.gc (goalc x86 frente a goal2c).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+
+(define *g2c-bb* (new 'global 'bounding-box))
+(define *g2c-bb2* (new 'global 'bounding-box))
+(define *g2c-bv* (new 'global 'vector))
+;; vector3s son 12 bytes, pero add-point! & co. los leen con cargas de 16: se guardan dentro de
+;; un vector con el 4.º componente fijo para que esos 4 bytes extra sean los mismos en goalc y en
+;; goal2c (si no, son lo que haya detrás en el heap, distinto en cada runtime).
+(define *g2c-b3a-v* (new 'global 'vector))
+(define *g2c-b3b-v* (new 'global 'vector))
+(define *g2c-b3a* (the-as vector3s *g2c-b3a-v*))
+(define *g2c-b3b* (the-as vector3s *g2c-b3b-v*))
+(define *g2c-bsph* (new 'global 'inline-array 'sphere 3))
+
+(defmacro g2c-pbox (tag box)
+  `(begin (g2c-pv ,tag (-> ,box min)) (g2c-pv ,tag (-> ,box max))))
+
+(defun g2c-bbox-reset ()
+  (g2c-set! (-> *g2c-bb* min) -1.0 -2.0 -3.0 1.0)
+  (g2c-set! (-> *g2c-bb* max) 4.0 5.0 6.0 1.0)
+  (g2c-set! (-> *g2c-bb2* min) 2.0 -10.0 0.0 1.0)
+  (g2c-set! (-> *g2c-bb2* max) 8.0 1.0 0.5 1.0)
+  (g2c-set! *g2c-b3a-v* 1.5 -0.5 10.0 1.0)
+  (g2c-set! *g2c-b3b-v* 2.0 3.0 0.25 1.0)
+  (g2c-set! (-> *g2c-bsph* 0) 0.0 0.0 0.0 1.0)
+  (g2c-set! (-> *g2c-bsph* 1) 10.0 -5.0 2.0 3.0)
+  (g2c-set! (-> *g2c-bsph* 2) -7.0 1.0 1.0 0.5)
+  0)
+
+(defun g2c-bounding-box-cases ()
+  (g2c-bbox-reset)
+  (g2c-pb "enside" (box-vector-enside? *g2c-bb* (g2c-set! *g2c-bv* 0.0 0.0 0.0 1.0)))
+  (g2c-pb "enside-borde" (box-vector-enside? *g2c-bb* (g2c-set! *g2c-bv* 4.0 0.0 0.0 1.0)))
+  (g2c-pb "inside" (box-vector-inside? *g2c-bb* (g2c-set! *g2c-bv* 4.0 0.0 0.0 1.0)))
+  (g2c-pb "inside-fuera" (box-vector-inside? *g2c-bb* (g2c-set! *g2c-bv* 4.1 0.0 0.0 1.0)))
+  (g2c-bbox-reset) (set-from-point-offset! *g2c-bb* *g2c-b3a* *g2c-b3b*) (g2c-pbox "set-from-point-offset" *g2c-bb*)
+  (g2c-bbox-reset) (add-point! *g2c-bb* *g2c-b3a*) (g2c-pbox "add-point" *g2c-bb*)
+  (g2c-bbox-reset) (add-box! *g2c-bb* *g2c-bb2*) (g2c-pbox "add-box" *g2c-bb*)
+  (g2c-bbox-reset) (set-from-point-offset-pad! *g2c-bb* *g2c-b3a* *g2c-b3b* 0.75) (g2c-pbox "set-pad" *g2c-bb*)
+  (g2c-bbox-reset) (set-from-sphere! *g2c-bb* (-> *g2c-bsph* 1)) (g2c-pbox "set-from-sphere" *g2c-bb*)
+  (g2c-bbox-reset) (add-spheres! *g2c-bb* *g2c-bsph* 3) (g2c-pbox "add-spheres" *g2c-bb*)
+  (g2c-bbox-reset) (set-from-spheres! *g2c-bb* *g2c-bsph* 3) (g2c-pbox "set-from-spheres" *g2c-bb*)
+  (g2c-bbox-reset) (set-from-spheres! *g2c-bb* *g2c-bsph* 1) (g2c-pbox "set-from-spheres-1" *g2c-bb*)
+  0)
+
+(g2c-bounding-box-cases)
