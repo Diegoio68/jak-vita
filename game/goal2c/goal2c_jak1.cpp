@@ -16,8 +16,9 @@
  *   cabecera del objeto recién enlazado. Igual para la dirección de las lambdas (mov-fa).
  * - Funciones sin símbolo ni método (lambdas: estados, behaviors anónimos...): se parchea su
  *   código x86 in situ con un salto al envoltorio de C (si mide al menos 12 bytes).
- * - Las que escriben pp (G2C_FN_WRITES_PP: suspend, with-proc) se quedan en x86: suspend
- *   copia la pila del proceso a un área de 256 bytes y los marcos de C no caben.
+ * - suspend: thread-suspend/resume nativos (copia de la pila a un búfer del host, sin el límite
+ *   de 256 bytes del área de respaldo); ver install_native_suspend. Con GOAL2C_SUSPEND_X86 las
+ *   que escriben pp (G2C_FN_WRITES_PP: suspend, with-proc) se quedan en x86.
  */
 #include "goal2c_jak1.h"
 
@@ -159,6 +160,139 @@ g2c_call_goal_q:
   ret
   .att_syntax prefix
 )");
+
+// Llamada C -> x86 con 8 GPR (como _call_goal8_asm_systemv) que además deja en *pp_out el r13
+// FINAL: tras un suspend + resume, pp es el que puso el kernel (el proceso, quizá reubicado),
+// no el que había al llamar.
+//   rdi = función, rsi = u64 args[8], rdx = pp, rcx = tabla de símbolos, r8 = base, r9 = pp_out
+extern "C" u64 g2c_call_goal8(void* func, const u64* args, u64 pp, u64 st, void* off, u64* pp_out)
+    asm("g2c_call_goal8");
+
+// Suspend/resume nativos (ver "Suspend nativo" más abajo). Se entran desde código GOAL x86
+// (objeto función con movabs rax + jmp rax), con r14 = tabla de símbolos y r15 = base.
+// Campos (dirección GOAL t de un cpu-thread, basic: campo de offset o en t - 4 + o):
+//   process t+4, pc t+20, sp t+24, stack-top t+28, rreg[7] t+36, freg[8] t+92, stack t+124.
+extern "C" void g2c_native_suspend() asm("g2c_native_suspend");
+extern "C" void g2c_native_resume() asm("g2c_native_resume");
+// helpers en C++ (devuelven la rsp real del kernel / no devuelven nada)
+extern "C" u64 g2c_suspend_save(u64 thread, u64 rsp) asm("g2c_suspend_save");
+extern "C" u64 g2c_resume_restore(u64 thread, u64 kernel_rsp) asm("g2c_resume_restore");
+
+asm(R"(
+  .text
+  .intel_syntax noprefix
+  .globl g2c_call_goal8
+g2c_call_goal8:
+  push r13
+  push r14
+  push r15
+  push r9
+  sub rsp, 8
+  mov r13, rdx
+  mov r14, rcx
+  mov r15, r8
+  mov rax, rdi
+  mov rdi, [rsi + 0]
+  mov rdx, [rsi + 16]
+  mov rcx, [rsi + 24]
+  mov r8, [rsi + 32]
+  mov r9, [rsi + 40]
+  mov r10, [rsi + 48]
+  mov r11, [rsi + 56]
+  mov rsi, [rsi + 8]
+  call rax
+  add rsp, 8
+  pop r9
+  mov [r9], r13
+  pop r15
+  pop r14
+  pop r13
+  ret
+
+  # thread-suspend nativo: r13 = hilo (dirección GOAL). Igual que el de gkernel.gc, pero la
+  # copia de la pila va a un búfer del host (g2c_suspend_save) sin límite de tamaño.
+  .globl g2c_native_suspend
+g2c_native_suspend:
+  # la dirección de retorno se queda en la pila (se guarda con ella): si se suspende desde C es
+  # una dirección del host, que no cabe en pc (32 bits). pc solo se usa en el arranque.
+  mov rax, [rsp]
+  sub rax, r15
+  mov [r15 + r13 + 20], eax
+  mov rax, rsp
+  sub rax, r15
+  mov [r15 + r13 + 24], eax
+  mov [r15 + r13 + 36], rbx
+  mov [r15 + r13 + 44], rbp
+  mov [r15 + r13 + 52], r10
+  mov [r15 + r13 + 60], r11
+  mov [r15 + r13 + 68], r12
+  movss [r15 + r13 + 92], xmm8
+  movss [r15 + r13 + 96], xmm9
+  movss [r15 + r13 + 100], xmm10
+  movss [r15 + r13 + 104], xmm11
+  movss [r15 + r13 + 108], xmm12
+  movss [r15 + r13 + 112], xmm13
+  movss [r15 + r13 + 116], xmm14
+  movss [r15 + r13 + 120], xmm15
+  # la copia se hace en C++, con la pila por debajo de sp (la parte usada ya está guardada)
+  mov rdi, r13
+  mov rsi, rsp
+  and rsp, -16
+  call g2c_suspend_save
+  # rax = rsp real del kernel (*kernel-sp* + base)
+  xor r13d, r13d
+  mov rsp, rax
+  pop r12
+  pop r11
+  pop r10
+  pop rbp
+  pop rbx
+  ret
+
+  # thread-resume nativo: rdi = hilo. Lo llama el kernel (resume-hook).
+  .globl g2c_native_resume
+g2c_native_resume:
+  push rbx
+  push rbp
+  push r10
+  push r11
+  push r12
+  mov r13, rdi
+  mov rbx, rsp
+  mov rsi, rsp
+  and rsp, -16
+  call g2c_resume_restore
+  # rax = 1 si se restauró una pila guardada (se vuelve con ret), 0 si el hilo arranca (pc)
+  mov rdx, rax
+  mov eax, [r15 + r13 + 24]
+  add rax, r15
+  mov rsp, rax
+  mov rbx, [r15 + r13 + 36]
+  mov rbp, [r15 + r13 + 44]
+  mov r10, [r15 + r13 + 52]
+  mov r11, [r15 + r13 + 60]
+  mov r12, [r15 + r13 + 68]
+  movss xmm8, [r15 + r13 + 92]
+  movss xmm9, [r15 + r13 + 96]
+  movss xmm10, [r15 + r13 + 100]
+  movss xmm11, [r15 + r13 + 104]
+  movss xmm12, [r15 + r13 + 108]
+  movss xmm13, [r15 + r13 + 112]
+  movss xmm14, [r15 + r13 + 116]
+  movss xmm15, [r15 + r13 + 120]
+  # set-to-run-bootstrap: rreg 5 y 6 en r8 y r9 (como el resume de gkernel.gc)
+  mov r8, [r15 + r13 + 76]
+  mov r9, [r15 + r13 + 84]
+  mov eax, [r15 + r13 + 20]
+  add rax, r15
+  mov r13d, [r15 + r13 + 4]
+  test rdx, rdx
+  jz 1f
+  ret
+1:
+  jmp rax
+  .att_syntax prefix
+)");
 #endif
 
 namespace jak1 {
@@ -222,15 +356,27 @@ u32 host_static(const char* obj, int seg, int off) {
   return g_cur_ofh->code_infos[seg].offset + (u32)off;
 }
 
+// Con el suspend nativo, el aviso de KERNEL_DEBUG del macro suspend (gkernel-h.gc: "ERROR:
+// suspend called without enough stack", si la pila usada no cabe en el área de respaldo de
+// 128/256 bytes) no aplica: la pila se guarda fuera, sin límite. Se omite esa llamada a format.
+u32 g_format_fn = 0;
+bool g_suspend_native_on = false;
+constexpr char kSuspendStackMsg[] = "ERROR: suspend called without enough stack";
+
 u64 host_call(u32 fn, int nargs, const u64* args) {
+  if (fn == g_format_fn && g_suspend_native_on && nargs >= 2 && (u32)args[1]) {
+    const char* str = Ptr<String>((u32)args[1])->data();
+    if (strncmp(str, kSuspendStackMsg, sizeof(kSuspendStackMsg) - 1) == 0) {
+      return 0;
+    }
+  }
   u64 a8[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   for (int i = 0; i < nargs && i < 8; i++) {
     a8[i] = args[i];
   }
-  u64 saved_pp = g_pp;
-  u64 ret = _call_goal8_asm_systemv(g_ee_main_mem + fn, a8, 0, saved_pp, s7.offset, g_ee_main_mem);
-  g_pp = saved_pp;
-  return ret;
+  // g_pp queda con el r13 final: tras un suspend + resume es el que fijó el kernel (el proceso,
+  // quizá reubicado); en una llamada normal, el mismo que se pasó.
+  return g2c_call_goal8(g_ee_main_mem + fn, a8, g_pp, s7.offset, g_ee_main_mem, &g_pp);
 }
 
 struct alignas(16) QCallBlock {
@@ -640,7 +786,196 @@ u64 g2c_rec(u64 cmd, u64 a, u64 b, u64 c) {
   }
 }
 
+/*!
+ * Suspend nativo (modo mixto). El thread-suspend de gkernel.gc copia la pila usada del proceso
+ * ([sp, stack-top), en *dram-stack*) al área de respaldo del cpu-thread, de 256 bytes
+ * (PROCESS_STACK_SAVE_SIZE); con marcos de C y trampolines no cabe. Aquí se sustituyen los
+ * métodos thread-suspend y thread-resume de cpu-thread (10 y 11) por g2c_native_suspend /
+ * g2c_native_resume: mismo modelo (todos los procesos corren en la misma pila; al suspender se
+ * copia la parte usada y al reanudar se devuelve a la MISMA dirección, así los punteros a la
+ * pila de los marcos de C siguen valiendo), pero la copia va a un búfer del host, sin límite.
+ * - Un búfer por suspensión: se crea al suspender y se libera al reanudar. El área de respaldo
+ *   del hilo guarda {marca, id, cookie}: viaja con el proceso si se reubica. La cookie (única
+ *   por suspensión) evita que un área vieja (de un proceso muerto o ya reubicado) se confunda
+ *   con un búfer vivo que haya reutilizado el id.
+ * - Un proceso que muere suspendido nunca se reanuda: deactivate (método 10 de process) pasa
+ *   por g2c_deactivate_hook, que libera su búfer y llama al deactivate original.
+ * Solo con la librería de goal2c cargada (las ejecuciones todo x86 siguen con el original).
+ * GOAL2C_SUSPEND_X86=1 lo desactiva (y las funciones que escriben pp se quedan en x86).
+ */
+constexpr u32 kSuspendMagic = 0x53433247;  // "G2CS"
+struct SuspendBuf {
+  u32 cookie = 0;  // 0 = libre
+  std::vector<u8> data;
+};
+std::vector<SuspendBuf> g_susp;
+std::vector<u32> g_susp_free;
+u32 g_susp_cookie = 0;
+u32 g_susp_live = 0, g_susp_live_max = 0;
+size_t g_susp_bytes_max = 0;
+u64 g_susp_count = 0;
+bool g_suspend_native = false;
+u32 g_sym_kernel_sp = 0, g_sym_suspended = 0, g_sym_running = 0;
+u32 g_deactivate_orig = 0;
+
+template <typename T>
+T& goal_field(u32 obj, u32 off) {
+  return *(T*)(g_ee_main_mem + obj + off);
+}
+
+void susp_free(u32 id) {
+  g_susp[id].cookie = 0;
+  g_susp[id].data.clear();  // conserva la capacidad
+  g_susp_free.push_back(id);
+  g_susp_live--;
+}
+
+//! Libera el búfer del hilo si el área apunta a una suspensión viva (cookie). Devuelve el id.
+int susp_lookup(u32 thread) {
+  u32 magic = goal_field<u32>(thread, 124), id = goal_field<u32>(thread, 128),
+      cookie = goal_field<u32>(thread, 132);
+  if (magic != kSuspendMagic || id >= g_susp.size() || g_susp[id].cookie == 0 ||
+      g_susp[id].cookie != cookie) {
+    return -1;
+  }
+  return (int)id;
+}
+
+u64 deactivate_hook(u64 proc) {
+  u32 p = (u32)proc;
+  u32 thread = p ? goal_field<u32>(p, 40) : 0;  // main-thread
+  if (thread) {
+    int id = susp_lookup(thread);
+    if (id >= 0) {
+      susp_free((u32)id);
+      goal_field<u32>(thread, 124) = 0;
+    }
+  }
+  // sin destructores aquí: deactivate del proceso actual no vuelve (salta a return-from-thread)
+  return host_call(g_deactivate_orig, 1, &proc);
+}
+
+//! Objeto función GOAL con  movabs rax, target ; jmp rax  (para entrar en el asm nativo)
+u32 make_jmp_entry(void* target) {
+  u32 slot = g_entry_next;
+  g_entry_next += kEntrySlot;
+  memset(Ptr<u8>(slot).c(), 0, kEntrySlot);
+  *Ptr<u32>(slot + 12).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
+  auto mem = Ptr<u8>(slot + 16);
+  int off = 0;
+  emit_movabs_rax(mem.c(), &off, (u64)target);
+  mem.c()[off++] = 0xff;
+  mem.c()[off++] = 0xe0;
+  flush_icache_goal(mem.offset, off);
+  return mem.offset;
+}
+
+u32 symbol_value(const char* name) {
+  auto sym = jak1::find_symbol_from_c(name);
+  return sym.offset ? *Ptr<u32>(sym.offset).c() : 0;
+}
+
+//! Tras enlazar gkernel (tipos cpu-thread y process y sus métodos ya definidos).
+void install_native_suspend() {
+  g_susp.clear();
+  g_susp_free.clear();
+  g_susp_live = g_susp_live_max = 0;
+  g_susp_bytes_max = 0;
+  g_susp_count = 0;
+  g_suspend_native = false;
+  g_suspend_native_on = false;
+  g_format_fn = 0;
+  if (std::getenv("GOAL2C_SUSPEND_X86")) {
+    lg::info("[goal2c] suspend: el de x86 (GOAL2C_SUSPEND_X86)");
+    return;
+  }
+  u32 cpu_thread = symbol_value("cpu-thread");
+  u32 process = symbol_value("process");
+  g_sym_kernel_sp = jak1::find_symbol_from_c("*kernel-sp*").offset;
+  g_sym_suspended = jak1::find_symbol_from_c("suspended").offset;
+  g_sym_running = jak1::find_symbol_from_c("running").offset;
+  if (!cpu_thread || !process || !g_sym_kernel_sp || !g_sym_suspended || !g_sym_running) {
+    lg::error("[goal2c] suspend nativo: faltan tipos o símbolos del kernel; se queda el de x86");
+    return;
+  }
+  jak1::method_set(cpu_thread, 10, make_jmp_entry((void*)g2c_native_suspend));
+  jak1::method_set(cpu_thread, 11, make_jmp_entry((void*)g2c_native_resume));
+  g_deactivate_orig = Ptr<jak1::Type>(process)->get_method(10).offset;
+  jak1::method_set(process, 10, make_c_entry((void*)deactivate_hook, Entry::ARGS));
+  g_suspend_native = true;
+  g_suspend_native_on = true;
+  g_format_fn = symbol_value("format");
+  lg::info("[goal2c] suspend nativo instalado (copia de pila fuera del heap)");
+}
+
 }  // namespace
+}  // namespace goal2c_runtime
+
+extern "C" u64 g2c_suspend_save(u64 thread64, u64 rsp) {
+  using namespace goal2c_runtime;
+  u32 thread = (u32)thread64;
+  u32 sp = (u32)(rsp - (u64)g_ee_main_mem);
+  u32 top = goal_field<u32>(thread, 28);
+  if (top < sp || top - sp > 0x100000 || goal_field<s32>(thread, 32) < 12) {
+    lg::die("[goal2c] suspend nativo: hilo 0x{:x} con sp 0x{:x} y stack-top 0x{:x}", thread, sp,
+            top);
+  }
+  u32 id;
+  if (!g_susp_free.empty()) {
+    id = g_susp_free.back();
+    g_susp_free.pop_back();
+  } else {
+    id = (u32)g_susp.size();
+    g_susp.emplace_back();
+  }
+  if (++g_susp_cookie == 0) {
+    g_susp_cookie = 1;
+  }
+  auto& b = g_susp[id];
+  b.cookie = g_susp_cookie;
+  b.data.assign(g_ee_main_mem + sp, g_ee_main_mem + top);
+  goal_field<u32>(thread, 124) = kSuspendMagic;
+  goal_field<u32>(thread, 128) = id;
+  goal_field<u32>(thread, 132) = b.cookie;
+  g_susp_live++;
+  g_susp_count++;
+  g_susp_live_max = std::max(g_susp_live_max, g_susp_live);
+  g_susp_bytes_max = std::max(g_susp_bytes_max, b.data.size());
+  if ((g_susp_count & 0x3ffff) == 0) {
+    lg::info("[goal2c] suspend nativo: {} suspensiones, {} vivas (máx. {}), pila máx. {} bytes",
+             g_susp_count, g_susp_live, g_susp_live_max, g_susp_bytes_max);
+  }
+  // proceso suspendido
+  goal_field<u32>(goal_field<u32>(thread, 4), 32) = g_sym_suspended;
+  return (u64)g_ee_main_mem + *Ptr<u32>(g_sym_kernel_sp).c();
+}
+
+extern "C" u64 g2c_resume_restore(u64 thread64, u64 kernel_rsp) {
+  using namespace goal2c_runtime;
+  u32 thread = (u32)thread64;
+  *Ptr<u32>(g_sym_kernel_sp).c() = (u32)(kernel_rsp - (u64)g_ee_main_mem);
+  u32 sp = goal_field<u32>(thread, 24);
+  u32 top = goal_field<u32>(thread, 28);
+  u64 restored = 0;
+  if (sp < top) {
+    restored = 1;
+    int id = susp_lookup(thread);
+    if (id < 0 || g_susp[id].data.size() != top - sp) {
+      lg::die("[goal2c] resume nativo: el hilo 0x{:x} (sp 0x{:x}, stack-top 0x{:x}) no tiene "
+              "una pila guardada válida",
+              thread, sp, top);
+    }
+    memcpy(g_ee_main_mem + sp, g_susp[id].data.data(), top - sp);
+    susp_free((u32)id);
+    goal_field<u32>(thread, 124) = 0;
+  }
+  u32 proc = goal_field<u32>(thread, 4);
+  goal_field<u32>(proc, 44) = thread;          // top-thread
+  goal_field<u32>(proc, 32) = g_sym_running;  // status
+  return restored;
+}
+
+namespace goal2c_runtime {
 
 void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   update_library();
@@ -667,6 +1002,9 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   }
   if (g_files.empty()) {
     return;
+  }
+  if (obj == "gkernel") {
+    install_native_suspend();
   }
   auto it = g_files.find(obj);
   if (it == g_files.end()) {
@@ -697,8 +1035,8 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   const u32 function_type = *(s7 + FIX_SYM_FUNCTION_TYPE);
   int replaced = 0, skipped = 0, patched = 0, kept_pp = 0;
   for (auto* e = info->funcs; e->name; e++) {
-    if (e->flags & G2C_FN_WRITES_PP) {
-      kept_pp++;  // suspend / with-proc: se queda en x86 (ver comentario del fichero)
+    if ((e->flags & G2C_FN_WRITES_PP) && !g_suspend_native) {
+      kept_pp++;  // suspend / with-proc con el suspend de x86: se queda en x86
       continue;
     }
     if (e->seg == DEBUG_SEGMENT && ofh->code_infos[DEBUG_SEGMENT].size == 0) {

@@ -7,8 +7,8 @@ Cifras (todas en número de funciones; no cuenta el código top-level de cada fi
   - traducibles: las que goal2c ya traduce sin error (aunque no estén validadas en el juego).
   - en C:        las de los ficheros VALIDADOS en el juego (los .c de out/goal2c/jak1/, que son
                  los que van en la librería del modo mixto y en test/goalc/test_goal2c.cpp),
-                 sin las marcadas G2C_FN_WRITES_PP (suspend/with-proc: el modo mixto las deja en
-                 x86; se cuentan aparte).
+                 incluidas las G2C_FN_WRITES_PP (suspend/with-proc), que desde el suspend nativo
+                 (2026-11-17) también se instalan; se informa aparte de cuántas son.
 
 Para "total" y "traducibles" ejecuta goal2c sobre todos los ficheros en una sola sesión de goalc
 (tras (mi)), escribiendo en out/goal2c/jak1/all/ (fuera de la librería del juego).
@@ -73,7 +73,7 @@ def validated_counts():
         if INFO_RE.search(text):
             entries = ENTRY_RE.findall(text)
             pp = sum(1 for e in entries if "G2C_FN_WRITES_PP" in e)
-            counts[c.stem] = (len(entries) - pp, pp)
+            counts[c.stem] = (len(entries), pp)
     return counts
 
 
@@ -123,7 +123,7 @@ def main():
         lines.append(f"sin datos (goalc no los compiló aparte): {len(failed)}: {', '.join(failed[:20])}"
                      + (" ..." if len(failed) > 20 else ""))
     if kept_pp:
-        lines.append(f"en ficheros validados pero en x86 por escribir pp (suspend/with-proc): {kept_pp}")
+        lines.append(f"de ellas escriben pp (suspend/with-proc, con el suspend nativo): {kept_pp}")
     summary = (f"Avance goal2c: {done}/{total} funciones de goal_src/jak1 en C dentro del juego "
                f"({pct(done, total):.1f} %); goal2c ya traduce {translatable}/{total} "
                f"({pct(translatable, total):.1f} %).")

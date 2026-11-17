@@ -146,10 +146,22 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   transformq), engine/geometry, engine/collide, engine/camera entero (solo en el juego) y
   engine/entity/res (con casos: prueba la ABI de 128 bits). res-h no: su inspect autogenerado
   depende de si entity-links está ya definido, y el objeto no sale idéntico.
-- Funciones que escriben pp (suspend, with-proc): se traducen pero llevan G2C_FN_WRITES_PP y
-  el modo mixto las deja en x86. suspend copia la pila del proceso a un área de 256 bytes
-  (PROCESS_STACK_SAVE_SIZE) y los trampolines + marcos de C no caben. En la Vita (Fase 3)
-  suspend necesitará otro mecanismo (pilas propias por proceso o similar).
+- Suspend nativo (2026-11-17, modo mixto de PC): thread-suspend/thread-resume de cpu-thread
+  (métodos 10 y 11) se sustituyen por g2c_native_suspend/resume (asm en goal2c_jak1.cpp). Mismo
+  modelo que Jak (todos los procesos en la misma pila; al suspender se copia [sp, stack-top) y
+  al reanudar se devuelve a la MISMA dirección: los punteros a la pila de los marcos de C siguen
+  valiendo), pero la copia va a un búfer del host por suspensión (sin el límite de 256 bytes del
+  área de respaldo; pilas de hasta ~2.8 KB con marcos de C). El área de respaldo del hilo guarda
+  {marca, id, cookie} (viaja con el proceso si se reubica). La dirección de retorno se queda en
+  la pila guardada (desde C es del host, no cabe en pc) y el resume vuelve con ret; pc solo vale
+  para el arranque (set-to-run). deactivate de process pasa por un gancho que libera el búfer
+  de un proceso que muere suspendido. host_call deja en g_pp el r13 FINAL (tras un resume, el
+  proceso que fija el kernel). Se omite el aviso KERNEL_DEBUG "suspend called without enough
+  stack" del macro suspend (ya no aplica). Solo con la librería cargada; GOAL2C_SUSPEND_X86=1
+  vuelve al de x86 (y entonces las G2C_FN_WRITES_PP se quedan en x86).
+  Validado con cam-states (17 funciones que suspenden) + todo lo ya en C: boot_smoke,
+  frame_check, collide_check; mutación (pp viejo tras host_call) -> collide_check falla.
+  Vita (Fase 3): mismo diseño en ARM (r4-r11, sp, lr, d8-d15) junto con el kernel en C.
 - Lambdas (mov-fa) y funciones sin símbolo ni método (estados, behaviors anónimos): el C
   obtiene la dirección del objeto función en el objeto cargado (g2c_fn[], como los
   estáticos). En el modo mixto el runtime PARCHEA in situ su código x86 con
