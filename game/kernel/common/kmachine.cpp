@@ -11,6 +11,7 @@
 #include "common/util/string_util.h"
 
 #include "game/external/discord.h"
+#include "game/goal2c/goal2c_jak1.h"
 #include "game/graphics/display.h"
 #include "game/graphics/gfx.h"
 #include "game/graphics/screenshot.h"
@@ -477,6 +478,10 @@ u64 pc_filter_debug_string(u32 str_ptr, u32 dist_ptr) {
 CommonPCPortFunctionWrappers g_pc_port_funcs;
 
 u64 read_ee_timer() {
+  unsigned long long vticks;
+  if (goal2c_runtime::virtual_ee_timer(&vticks)) {
+    return vticks;  // goal2c (Jak Vita): reloj virtual con GOAL2C_HUELLA
+  }
   u64 ns = ee_clock_timer.getNs();
   return (ns * 3) / 10;
 }
@@ -486,6 +491,7 @@ void pc_memmove(u32 dst, u32 src, u32 size) {
 }
 
 void send_gfx_dma_chain(u32 /*bank*/, u32 chain) {
+  goal2c_runtime::frame_fingerprint(chain);  // goal2c (Jak Vita): solo con GOAL2C_HUELLA
   if (Gfx::GetCurrentRenderer()) {
     Gfx::GetCurrentRenderer()->send_chain(g_ee_main_mem, chain);
   }

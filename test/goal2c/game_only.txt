@@ -1,0 +1,54 @@
+# goal2c (Jak Vita): ficheros validados solo dentro del juego (sin casos propios).
+# Para cada uno: objeto transpilado idéntico al que carga el juego, C que compila limpio y
+# funciones instaladas en el modo mixto; además la prueba de humo, la huella por fotograma
+# (frame_check.sh) y collide_check.sh. Lo añade goalc/c_backend/tools/validate_batch.py.
+# Formato: <objeto> <fuente .gc>
+# collide-planes no está: aparece en all_objs.json pero no tiene fuente .gc en OpenGOAL.
+# res-h no está: su inspect autogenerado depende de si entity-links ya está definido del todo
+# (sesión con el motor compilado) o solo declarado, y el objeto no sale idéntico.
+bounding-box-h goal_src/jak1/engine/geometry/bounding-box-h.gc
+geometry-h goal_src/jak1/engine/geometry/geometry-h.gc
+surface-h goal_src/jak1/engine/collide/surface-h.gc
+pat-h goal_src/jak1/engine/collide/pat-h.gc
+collide-func-h goal_src/jak1/engine/collide/collide-func-h.gc
+collide-mesh-h goal_src/jak1/engine/collide/collide-mesh-h.gc
+collide-shape-h goal_src/jak1/engine/collide/collide-shape-h.gc
+collide-target-h goal_src/jak1/engine/collide/collide-target-h.gc
+collide-touch-h goal_src/jak1/engine/collide/collide-touch-h.gc
+collide-edge-grab-h goal_src/jak1/engine/collide/collide-edge-grab-h.gc
+collide-frag-h goal_src/jak1/engine/collide/collide-frag-h.gc
+collide-cache-h goal_src/jak1/engine/collide/collide-cache-h.gc
+collide-h goal_src/jak1/engine/collide/collide-h.gc
+path-h goal_src/jak1/engine/geometry/path-h.gc
+collide-probe goal_src/jak1/engine/collide/collide-probe.gc
+collide-frag goal_src/jak1/engine/collide/collide-frag.gc
+collide-mesh goal_src/jak1/engine/collide/collide-mesh.gc
+collide-touch goal_src/jak1/engine/collide/collide-touch.gc
+collide-edge-grab goal_src/jak1/engine/collide/collide-edge-grab.gc
+collide-shape goal_src/jak1/engine/collide/collide-shape.gc
+collide-shape-rider goal_src/jak1/engine/collide/collide-shape-rider.gc
+collide goal_src/jak1/engine/collide/collide.gc
+vol-h goal_src/jak1/engine/geometry/vol-h.gc
+main-collide goal_src/jak1/engine/collide/main-collide.gc
+collide-cache goal_src/jak1/engine/collide/collide-cache.gc
+path goal_src/jak1/engine/geometry/path.gc
+vol goal_src/jak1/engine/geometry/vol.gc
+matrix-h goal_src/jak1/engine/math/matrix-h.gc
+quaternion-h goal_src/jak1/engine/math/quaternion-h.gc
+euler-h goal_src/jak1/engine/math/euler-h.gc
+transform-h goal_src/jak1/engine/math/transform-h.gc
+transformq-h goal_src/jak1/engine/math/transformq-h.gc
+pov-camera-h goal_src/jak1/engine/camera/pov-camera-h.gc
+camera-h goal_src/jak1/engine/camera/camera-h.gc
+cam-debug-h goal_src/jak1/engine/camera/cam-debug-h.gc
+camera goal_src/jak1/engine/camera/camera.gc
+cam-interface goal_src/jak1/engine/camera/cam-interface.gc
+cam-master goal_src/jak1/engine/camera/cam-master.gc
+cam-states goal_src/jak1/engine/camera/cam-states.gc
+cam-states-dbg goal_src/jak1/engine/camera/cam-states-dbg.gc
+cam-combiner goal_src/jak1/engine/camera/cam-combiner.gc
+cam-update goal_src/jak1/engine/camera/cam-update.gc
+cam-layout goal_src/jak1/engine/camera/cam-layout.gc
+cam-debug goal_src/jak1/engine/camera/cam-debug.gc
+cam-start goal_src/jak1/engine/camera/cam-start.gc
+pov-camera goal_src/jak1/engine/camera/pov-camera.gc

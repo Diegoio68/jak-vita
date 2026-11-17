@@ -104,3 +104,53 @@ else()
   message(STATUS "goal2c: no está ${G2C_MATH_C}; no se compila el benchmark "
                  "(ejecuta antes build/goalc-test --gtest_filter='Goal2CTests.*')")
 endif()
+
+# ---------------------------------------------------------------------------
+# Comprobación goal2c en ARM: JAKV00003, log en ux0:data/jakvita/check.txt
+# Reproduce los casos grabados en el PC (out/goal2c/jak1/check/<lote>.rec + .img.z) con el C
+# de TODOS los ficheros validados y los compara con goalc. Antes:
+#   build/goalc-test --gtest_filter='Goal2CTests.Arm*'
+#   python3 goalc/c_backend/tools/build_check.py      (registro + imágenes comprimidas)
+# y volver a configurar (cmake -S vita -B build-vita) si cambian los ficheros o los lotes.
+# ---------------------------------------------------------------------------
+set(G2C_CHECK_DIR "${G2C_OUT_DIR}/check")
+file(GLOB G2C_CHECK_RECS "${G2C_CHECK_DIR}/*.rec")
+if(G2C_CHECK_RECS AND EXISTS "${G2C_CHECK_DIR}/registry_check.c")
+  set(G2C_RT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../goalc/c_backend/runtime")
+  set(G2C_CHECK_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../goalc/c_backend/check")
+  file(GLOB G2C_ALL_C "${G2C_OUT_DIR}/*.c")
+  list(FILTER G2C_ALL_C EXCLUDE REGEX "/registry\\.c$")
+
+  # lotes y ficheros del vpk
+  set(G2C_LOTS "")
+  set(G2C_VPK_FILES "")
+  foreach(rec ${G2C_CHECK_RECS})
+    get_filename_component(lot "${rec}" NAME_WE)
+    string(APPEND G2C_LOTS "\"${lot}\", ")
+    list(APPEND G2C_VPK_FILES FILE "${rec}" "check/${lot}.rec"
+                              FILE "${G2C_CHECK_DIR}/${lot}.img.z" "check/${lot}.img.z")
+  endforeach()
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/check_gen/check_lots.h"
+       "#define G2C_CHECK_LOTS ${G2C_LOTS}\n")
+
+  add_library(g2c_check_c OBJECT ${G2C_ALL_C} "${G2C_CHECK_DIR}/registry_check.c"
+                                 "${G2C_CHECK_SRC}/g2c_check.c")
+  target_include_directories(g2c_check_c PRIVATE "${G2C_RT_DIR}" "${G2C_CHECK_SRC}")
+  target_compile_options(g2c_check_c PRIVATE -std=c11 -O2 -Wall -Wextra -Werror
+                         -include "${G2C_CHECK_SRC}/g2c_check.h")
+  target_compile_definitions(g2c_check_c PRIVATE G2C_CHECK_NO_MAIN)
+
+  add_executable(jakvita_check check/main.c $<TARGET_OBJECTS:g2c_check_c>)
+  target_include_directories(jakvita_check PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/check_gen")
+  target_link_libraries(jakvita_check z m SceIofilemgr_stub SceLibKernel_stub)
+
+  vita_create_self(check_eboot.bin jakvita_check UNSAFE)
+  vita_create_vpk(jakvita_check.vpk JAKV00003 check_eboot.bin
+    VERSION ${VITA_VERSION}
+    NAME "Jak Vita check"
+    ${G2C_VPK_FILES}
+  )
+else()
+  message(STATUS "goal2c: sin casos grabados en ${G2C_CHECK_DIR}; no se compila la app de "
+                 "comprobación (ver vita/CMakeLists.txt)")
+endif()

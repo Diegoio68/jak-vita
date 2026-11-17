@@ -195,6 +195,31 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   corre en la pila x86 nativa pasa direcciones "rsp - base" de 64 bits (vectores en pila);
   truncarlas a 32 bits rompía el juego (y ningún test de goalc-test lo veía).
 
+### Fase 2: validación por lotes (plan aprobado 2026-11-16)
+- Lotes con `python3 goalc/c_backend/tools/validate_batch.py <carpetas>` (`--dry-run` solo
+  transpila y comprueba). Por fichero: objeto idéntico al del juego y C limpio en PC y ARM. Por
+  lote: boot_smoke.sh + frame_check.sh + collide_check.sh; si falla, biseca y deja fuera los
+  culpables. Los validados se añaden a test/goal2c/game_only.txt (lo lee goalc-test).
+  Un commit por lote.
+- Objetos de entrada a C: en la zona 0x4e00000-0x5000000 (hueco libre entre el heap global y el
+  de depuración), NO en el heap. El C tampoco crea símbolos (los del segmento de depuración no
+  cargado apuntan a un símbolo ficticio). Así el heap es idéntico al de una ejecución x86.
+- Huella por fotograma (`test/goal2c/frame_check.sh`, GOAL2C_HUELLA=1): hash de la cadena DMA en
+  send_gfx_dma_chain, x86 frente a C, fotograma a fotograma. Determinismo: reloj virtual
+  (__read-ee-timer avanza 1/60 s por fotograma), RpcBusy espera al IOP, y SIN -debug (el texto
+  de depuración cambia cada fotograma). Se enmascara la 4.ª palabra de STQ (GIF PACKED y
+  UNPACK V4-32 con Q=1.0): GOAL la deja indefinida (movss sobre un registro: en x86 queda lo
+  anterior, en C 0). `CHECK_X86_TWICE=1` = x86 contra x86 (0 diferencias en 26000 fotogramas).
+  `GOAL2C_HUELLA_VOLCADO=<n>` vuelca el fotograma n para compararlo con cmp.
+- Comprobación en ARM por lote: casos en test/goal2c/arm/<lote>_arm.gc (preludio
+  arm_prelude.gc), grabados en x86 por Goal2CTests.Arm<Lote> con GOAL2C_REC: imagen de la
+  memoria GOAL + arena antes/después + retorno en out/goal2c/jak1/check/. Reproducción:
+  goalc/c_backend/check/g2c_check.c parchea en la imagen cada objeto función con su puntero C
+  (como hará el cargador de la Vita) y compara; NaN sin signo. En PC:
+  `python3 goalc/c_backend/tools/build_check.py --run <lote>`; en la Vita: app JAKV00003,
+  `cmake -S vita -B build-vita && cmake --build build-vita && APP=check vita/tools/emu_test.sh`.
+  Caso INVALIDO = llama a algo sin C o lee fuera de la imagen: cambiar el caso, no es fallo.
+
 ### Vectores y enteros de 128 bits (VECTOR_FLOAT / INT_128 -> g2c_q)
 - Semántica = la de goalc x86, que sigue la MIPS de la PS2 con src1 = rs, src2 = rt
   (ojo con los *_swapped de IGenX86). vmaxps/vminps: con NaN o iguales gana src2.

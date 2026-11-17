@@ -21,13 +21,16 @@
  */
 #include "goal2c_jak1.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "common/common_types.h"
+#include "common/dma/dma_chain_read.h"
 #include "common/log/log.h"
 #include "common/symbols.h"
 
@@ -35,6 +38,7 @@
 #include "game/kernel/common/klink.h"
 #include "game/kernel/common/kmalloc.h"
 #include "game/kernel/common/kscheme.h"
+#include "game/kernel/common/memory_layout.h"
 #include "game/kernel/jak1/kscheme.h"
 #include "goalc/c_backend/runtime/goal2c_rt.h"
 
@@ -168,6 +172,8 @@ using namespace jak1_symbols;
 
 std::string g_loaded_path;  // librería cargada ahora mismo ("" = ninguna)
 std::map<std::string, const g2c_file_info*> g_files;
+// objeto -> {offset, size} de sus 3 segmentos (todos los objetos v3 enlazados, para el grabador)
+std::map<std::string, std::array<u32, 6>> g_obj_segments;
 std::map<std::string, int> g_replaced;  // objeto -> funciones sustituidas en su último enlace
 ObjectFileHeader* g_cur_ofh = nullptr;
 std::string g_cur_obj;
@@ -175,8 +181,34 @@ std::string g_cur_obj;
 // r13 (pp) de la última entrada x86 -> C. Se guarda/restaura en cada llamada C -> x86.
 u64 g_pp = 0;
 
+// Zona de los objetos función de entrada a C: fuera de los heaps de GOAL, en el hueco sin usar
+// entre el final del heap global y el heap de depuración. Así el heap del juego queda idéntico
+// al de una ejecución todo x86 (las direcciones de los objetos del juego no cambian y se pueden
+// comparar estructuras enteras, p. ej. la cadena DMA de cada fotograma). Huecos de 64 bytes:
+// etiqueta de tipo en +12 y código en +16 (48 bytes; el código de entrada mide 36).
+constexpr u32 kEntryZoneStart = 0x4e00000;
+constexpr u32 kEntryZoneEnd = DEBUG_HEAP_START;
+constexpr u32 kEntrySlot = 0x40;
+static_assert(kEntryZoneStart >= GLOBAL_HEAP_END, "la zona de entradas pisa el heap global");
+// el primer hueco de la zona es un símbolo ficticio (valor #f) para los símbolos que no existen
+constexpr u32 kDummySymbol = kEntryZoneStart + 0x10;
+u32 g_entry_next = kEntryZoneStart + kEntrySlot;
+u64 g_fingerprint_frame = 0;  // fotogramas desde el arranque del runtime (huella)
+u64 g_vclock_in_frame = 0;    // reloj virtual: ticks dentro del fotograma actual
+
 u32 host_symbol(const char* name) {
-  return jak1::intern_from_c(name).offset;
+  // Casi siempre el símbolo ya existe (el objeto x86 lo internó al enlazarse). Si no, crearlo
+  // reserva su string en el heap global y el heap deja de ser igual al de una ejecución x86.
+  auto sym = jak1::find_symbol_from_c(name);
+  if (sym.offset) {
+    return sym.offset;
+  }
+  // Solo pasa con código del segmento de depuración que no se ha cargado (sin -debug): sus
+  // símbolos no existen porque el x86 de ese segmento nunca se enlazó. Esas funciones no se
+  // instalan; se les da un símbolo ficticio (valor #f) en vez de crear uno, que reservaría su
+  // string en el heap global y lo haría distinto al de una ejecución x86.
+  lg::debug("[goal2c] símbolo {} inexistente: se usa el ficticio", name);
+  return kDummySymbol;
 }
 
 u32 host_static(const char* obj, int seg, int off) {
@@ -234,8 +266,14 @@ enum class Entry { ARGS, STACK, Q };
 
 //! Objeto función GOAL que entra en la función C fn (ver comentario del fichero).
 u32 make_c_entry(void* fn, Entry kind) {
-  auto mem = Ptr<u8>(jak1::alloc_heap_object(s7.offset + FIX_SYM_GLOBAL_HEAP,
-                                             *(s7 + FIX_SYM_FUNCTION_TYPE), 0x40, UNKNOWN_PP));
+  if (g_entry_next + kEntrySlot > kEntryZoneEnd) {
+    lg::die("[goal2c] zona de entradas a C llena (0x{:x}..0x{:x})", kEntryZoneStart, kEntryZoneEnd);
+  }
+  u32 slot = g_entry_next;
+  g_entry_next += kEntrySlot;
+  memset(Ptr<u8>(slot).c(), 0, kEntrySlot);
+  *Ptr<u32>(slot + 12).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
+  auto mem = Ptr<u8>(slot + 16);
   u8* code = mem.c();
   int off = 0;
   // movabs rax, &g_pp ; mov [rax], r13
@@ -361,17 +399,144 @@ bool parse_method(const std::string& name, int* id, std::string* type) {
   return true;
 }
 
+/*!
+ * Grabador de casos para la comprobación en ARM (GOAL2C_REC=<carpeta>). Builtin GOAL
+ * (__g2c-rec cmd a b c), ver test/goal2c/arm/arm_prelude.gc:
+ *   0 nombre arena tamaño   empieza: <carpeta>/<nombre>.img = imagen de la memoria GOAL
+ *                           [0, cima del heap global) y <nombre>.rec = cabecera + objetos
+ *   1 valor                 añade un argumento al próximo caso
+ *   2 etiqueta fn flags     empieza un caso: guarda la arena de antes (flags 1 = el retorno no
+ *                           cuenta: la función devuelve none)
+ *   3 retorno               termina el caso: retorno y arena de después
+ *   4                       cierra
+ * Formato (little endian) en goalc/c_backend/check/g2c_check.c.
+ */
+FILE* g_rec = nullptr;
+u32 g_rec_arena = 0, g_rec_arena_size = 0;
+u64 g_rec_args[8];
+std::string g_rec_label, g_rec_fn;
+u32 g_rec_nargs = 0, g_rec_flags = 0;
+std::vector<u8> g_rec_before;
+
+void rec_u32(u32 v) {
+  fwrite(&v, 4, 1, g_rec);
+}
+void rec_str(const std::string& str) {
+  u16 n = (u16)str.size();
+  fwrite(&n, 2, 1, g_rec);
+  fwrite(str.data(), 1, n, g_rec);
+}
+std::string goal_string(u32 str) {
+  return str ? std::string(Ptr<String>(str)->data()) : std::string();
+}
+std::string symbol_name(u32 sym) {
+  return goal_string(jak1::info(Ptr<jak1::Symbol>(sym))->str.offset);
+}
+
+u64 g2c_rec(u64 cmd, u64 a, u64 b, u64 c) {
+  const char* dir = std::getenv("GOAL2C_REC");
+  switch (cmd) {
+    case 0: {
+      std::string name = goal_string((u32)a);
+      u32 image_size = (kglobalheap->current.offset + 0xffff) & ~0xffffu;
+      auto img_path = fmt::format("{}/{}.img", dir, name);
+      FILE* img = fopen(img_path.c_str(), "wb");
+      if (!img) {
+        lg::error("[goal2c] no se puede escribir {}", img_path);
+        return 0;
+      }
+      fwrite(g_ee_main_mem, 1, image_size, img);
+      fclose(img);
+      g_rec = fopen(fmt::format("{}/{}.rec", dir, name).c_str(), "wb");
+      g_rec_arena = (u32)b;
+      g_rec_arena_size = (u32)c;
+      fwrite("G2CR", 1, 4, g_rec);
+      rec_u32(1);  // versión
+      rec_u32(image_size);
+      rec_u32(s7.offset);
+      rec_u32(SymbolTable2.offset);
+      rec_u32(LastSymbol.offset);
+      rec_u32(jak1::info(Ptr<jak1::Symbol>(s7.offset)).offset - s7.offset);
+      rec_u32(*(s7 + FIX_SYM_FUNCTION_TYPE));
+      rec_u32(g_rec_arena);
+      rec_u32(g_rec_arena_size);
+      rec_u32((u32)g_obj_segments.size());
+      for (auto& [o, segs] : g_obj_segments) {
+        rec_str(o);
+        for (u32 v : segs) {
+          rec_u32(v);
+        }
+      }
+      lg::info("[goal2c] grabando casos ARM en {}/{}.rec (imagen {} MB)", dir, name,
+               image_size >> 20);
+      return 1;
+    }
+    case 1:
+      if (g_rec_nargs < 8) {
+        g_rec_args[g_rec_nargs] = a;
+      }
+      g_rec_nargs++;
+      return 0;
+    case 2:
+      g_rec_label = goal_string((u32)a);
+      g_rec_fn = symbol_name((u32)b);
+      g_rec_flags = (u32)c;
+      g_rec_before.assign(g_ee_main_mem + g_rec_arena,
+                          g_ee_main_mem + g_rec_arena + g_rec_arena_size);
+      return 0;
+    case 3:
+      if (g_rec) {
+        fwrite("CASE", 1, 4, g_rec);
+        rec_str(g_rec_label);
+        rec_str(g_rec_fn);
+        rec_u32(g_rec_nargs);
+        rec_u32(g_rec_flags);
+        fwrite(g_rec_args, 8, 8, g_rec);
+        fwrite(&a, 8, 1, g_rec);
+        fwrite(g_rec_before.data(), 1, g_rec_before.size(), g_rec);
+        fwrite(g_ee_main_mem + g_rec_arena, 1, g_rec_arena_size, g_rec);
+      }
+      memset(g_rec_args, 0, sizeof(g_rec_args));
+      g_rec_nargs = 0;
+      return 0;
+    case 4:
+      if (g_rec) {
+        fwrite("END!", 1, 4, g_rec);
+        fclose(g_rec);
+        g_rec = nullptr;
+      }
+      return 0;
+    default:
+      return 0;
+  }
+}
+
 }  // namespace
 
 void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   update_library();
-  if (g_files.empty()) {
-    return;
-  }
   std::string obj = object_name;
   auto slash = obj.find_last_of("/\\");
   if (slash != std::string::npos) {
     obj = obj.substr(slash + 1);
+  }
+  g_obj_segments[obj] = {ofh->code_infos[0].offset, ofh->code_infos[0].size,
+                         ofh->code_infos[1].offset, ofh->code_infos[1].size,
+                         ofh->code_infos[2].offset, ofh->code_infos[2].size};
+  if (obj == "gcommon") {
+    // primer objeto del kernel: arranque de un runtime nuevo (los tests arrancan varios)
+    g_obj_segments.clear();
+    if (std::getenv("GOAL2C_REC")) {
+      jak1::make_function_symbol_from_c("__g2c-rec", (void*)g2c_rec);
+    }
+    g_entry_next = kEntryZoneStart + kEntrySlot;
+    memset(Ptr<u8>(kEntryZoneStart).c(), 0, kEntrySlot);
+    *Ptr<u32>(kDummySymbol).c() = s7.offset;  // valor #f
+    g_fingerprint_frame = 0;
+    g_vclock_in_frame = 0;
+  }
+  if (g_files.empty()) {
+    return;
   }
   auto it = g_files.find(obj);
   if (it == g_files.end()) {
@@ -406,6 +571,10 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
       kept_pp++;  // suspend / with-proc: se queda en x86 (ver comentario del fichero)
       continue;
     }
+    if (e->seg == DEBUG_SEGMENT && ofh->code_infos[DEBUG_SEGMENT].size == 0) {
+      skipped++;  // segmento de depuración no cargado (sin -debug): la función no existe
+      continue;
+    }
     Entry kind = e->fn_q ? Entry::Q : (e->fn_arr ? Entry::STACK : Entry::ARGS);
     void* fn = e->fn_q ? e->fn_q : (e->fn_arr ? e->fn_arr : e->fn);
     std::string name = e->name;
@@ -413,15 +582,17 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     std::string type_name;
     bool installed = false;
     if (parse_method(name, &method_id, &type_name)) {
-      u32 type = *Ptr<u32>(jak1::intern_from_c(type_name.c_str()).offset).c();
+      auto type_sym = jak1::find_symbol_from_c(type_name.c_str());
+      u32 type = type_sym.offset ? *Ptr<u32>(type_sym.offset).c() : 0;
       if (type) {
         jak1::method_set(type, method_id, make_c_entry(fn, kind));
         installed = true;
       } else {
         lg::warn("[goal2c] {}: tipo {} sin definir, no se sustituye {}", obj, type_name, name);
       }
-    } else if (name.rfind("anon-function", 0) != 0) {
-      u32* value = Ptr<u32>(jak1::intern_from_c(name.c_str()).offset).c();
+    } else if (auto fsym = jak1::find_symbol_from_c(name.c_str()); fsym.offset) {
+      // (find, no intern: no crear símbolos ni strings en el heap)
+      u32* value = Ptr<u32>(fsym.offset).c();
       // solo si el top-level dejó ahí una función (inline, etc. no se tocan)
       if (*value != 0 && *Ptr<u32>(*value - 4).c() == function_type) {
         *value = make_c_entry(fn, kind);
@@ -463,10 +634,148 @@ int replaced_functions(const char* object_name) {
   return it == g_replaced.end() ? 0 : it->second;
 }
 
+namespace {
+constexpr u64 kTicksPerFrame = 300000000ULL / 60;  // __read-ee-timer: 300 MHz
+}  // namespace
+
+//! Pone a cero, en una copia de paquetes GIF, los campos que el GS no usa: la 4.ª palabra de
+//! los registros STQ (descriptor 0x2) en modo PACKED.
+void mask_gif_ignored(u8* data, u32 size) {
+  u32 off = 0;
+  while (off + 16 <= size) {
+    u64 lo, hi;
+    memcpy(&lo, data + off, 8);
+    memcpy(&hi, data + off + 8, 8);
+    off += 16;
+    u32 nloop = lo & 0x7fff;
+    u32 flg = (lo >> 58) & 3;
+    u32 nreg = (lo >> 60) & 0xf;
+    if (nreg == 0) {
+      nreg = 16;
+    }
+    if (flg == 0) {  // PACKED: nloop * nreg qwords
+      for (u32 l = 0; l < nloop; l++) {
+        for (u32 r = 0; r < nreg; r++) {
+          if (off + 16 > size) {
+            return;
+          }
+          u32 desc = (hi >> (4 * r)) & 0xf;
+          if (desc == 0x2) {
+            memset(data + off + 12, 0, 4);
+          }
+          off += 16;
+        }
+      }
+    } else if (flg == 1) {  // REGLIST: nloop * nreg palabras de 64 bits, alineado a 128
+      off += ((nloop * nreg * 8) + 15) & ~15u;
+    } else {  // IMAGE / desactivado: nloop qwords
+      off += nloop * 16;
+    }
+  }
+}
+
+//! En datos de UNPACK V4-32: pone a cero la 4.ª palabra de los qwords cuya 3.ª es 1.0f (vectores
+//! S, T, Q=1 que el VU usa como STQ). GOAL los construye con movss sobre un registro cuyo resto
+//! es indefinido: en x86 queda lo que dejó la operación anterior, en C un 0.
+void mask_unpack_stq_w(u8* data, u32 size) {
+  for (u32 off = 0; off + 16 <= size; off += 16) {
+    u32 z;
+    memcpy(&z, data + off + 8, 4);
+    if (z == 0x3f800000) {
+      memset(data + off + 12, 0, 4);
+    }
+  }
+}
+
+bool virtual_ee_timer(unsigned long long* ticks) {
+  static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
+  if (!enabled) {
+    return false;
+  }
+  // 100 ticks (1/3 de microsegundo) por lectura, sin pasar al fotograma siguiente
+  if (g_vclock_in_frame + 100 < kTicksPerFrame) {
+    g_vclock_in_frame += 100;
+  }
+  *ticks = g_fingerprint_frame * kTicksPerFrame + g_vclock_in_frame;
+  return true;
+}
+
+void frame_fingerprint(u32 chain) {
+  static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
+  if (!enabled) {
+    return;
+  }
+  g_vclock_in_frame = 0;
+  // FNV-1a de 64 bits sobre cada transferencia (tag de VIF y datos), siguiendo la cadena
+  // dos hashes: estricto (todo) y enmascarado (sin los campos que el hardware ignora y que el
+  // código original deja sin inicializar; ver mask_gif_ignored / mask_unpack_stq_w)
+  u64 h = 0xcbf29ce484222325ULL, hs = 0xcbf29ce484222325ULL;
+  auto mix_one = [](u64& acc, const u8* p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+      acc = (acc ^ p[i]) * 0x100000001b3ULL;
+    }
+  };
+  auto mix = [&](const u8* p, size_t n) { mix_one(h, p, n); };
+  auto mix_strict = [&](const u8* p, size_t n) { mix_one(hs, p, n); };
+  // GOAL2C_HUELLA_VOLCADO=<n>: escribe el fotograma n (transferencias seguidas) en un fichero,
+  // para comparar dos ejecuciones con cmp y ver qué cambia
+  static const char* dump_env = std::getenv("GOAL2C_HUELLA_VOLCADO");
+  FILE* dump = nullptr;
+  if (dump_env && (u64)std::atoll(dump_env) == g_fingerprint_frame) {
+    auto path = fmt::format("huella_{}_{}.bin", g_fingerprint_frame, getpid());
+    dump = fopen(path.c_str(), "wb");
+    lg::info("[huella] volcado en {}", path);
+  }
+  DmaFollower dma(g_ee_main_mem, chain);
+  u64 transfers = 0, bytes = 0;
+  std::vector<u8> masked;
+  while (!dma.ended() && transfers < 2000000) {
+    auto t = dma.read_and_advance();
+    mix((const u8*)&t.transferred_tag, 8);
+    mix_strict((const u8*)&t.transferred_tag, 8);
+    mix_strict(t.data, t.size_bytes);
+    // Paquetes GIF (VIF DIRECT/DIRECTHL): se ponen a cero los campos que el GS ignora. El
+    // código original deja ahí lo que haya en la pila (vectores 'stack-no-clear), y eso cambia
+    // entre ejecuciones y entre x86 y C sin que cambie la imagen.
+    u32 vif1_cmd = (u32)(t.transferred_tag >> 56) & 0x7f;
+    if ((vif1_cmd == 0x50 || vif1_cmd == 0x51) && t.size_bytes) {
+      masked.assign(t.data, t.data + t.size_bytes);
+      mask_gif_ignored(masked.data(), t.size_bytes);
+      mix(masked.data(), t.size_bytes);
+    } else if ((vif1_cmd & 0x6f) == 0x6c && t.size_bytes) {
+      // UNPACK V4-32 al VU1: misma basura en la w de vectores (S, T, Q=1.0, w)
+      masked.assign(t.data, t.data + t.size_bytes);
+      mask_unpack_stq_w(masked.data(), t.size_bytes);
+      mix(masked.data(), t.size_bytes);
+    } else {
+      mix(t.data, t.size_bytes);
+    }
+    if (dump) {
+      u32 hdr[4] = {(u32)transfers, t.data_offset, t.size_bytes, 0};
+      fwrite(hdr, 4, 4, dump);
+      fwrite(&t.transferred_tag, 8, 1, dump);
+      fwrite(t.data, 1, t.size_bytes, dump);
+    }
+    transfers++;
+    bytes += t.size_bytes;
+  }
+  if (dump) {
+    fclose(dump);
+  }
+  lg::info("[huella] {} {:016x} estricto {:016x} ({} transferencias, {} bytes)",
+           g_fingerprint_frame++, h, hs, transfers, bytes);
+}
+
 #else  // !GOAL2C_MIXED_SUPPORTED
 
 int replaced_functions(const char*) {
   return 0;
+}
+
+void frame_fingerprint(unsigned int) {}
+
+bool virtual_ee_timer(unsigned long long*) {
+  return false;
 }
 
 void after_link_jak1(const char*, ObjectFileHeader*) {

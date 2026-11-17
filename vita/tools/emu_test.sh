@@ -15,14 +15,17 @@
 #   VITA3K_EXE   ruta Windows a Vita3K.exe (si no, se lee de vita/tools/.vita3k_path, no versionado)
 #   EMU_WAIT     segundos antes de la captura (por defecto 8)
 #   BUILD_DIR    directorio de build (por defecto build-vita)
-#   APP          hello (por defecto, JAKV00001) | bench (benchmark goal2c, JAKV00002)
+#   APP          hello (por defecto, JAKV00001) | bench (benchmark goal2c, JAKV00002) |
+#                check (comprobación goal2c en ARM, JAKV00003; EMU_WAIT 120 por defecto)
 set -uo pipefail
 
 APP="${APP:-hello}"
 case "$APP" in
   hello) TITLE_ID="JAKV00001"; VPK_NAME="jakvita.vpk"; APP_LOG="log.txt" ;;
   bench) TITLE_ID="JAKV00002"; VPK_NAME="jakvita_bench.vpk"; APP_LOG="bench.txt" ;;
-  *) echo "error: APP desconocida: $APP (hello|bench)" >&2; exit 1 ;;
+  check) TITLE_ID="JAKV00003"; VPK_NAME="jakvita_check.vpk"; APP_LOG="check.txt"
+         EMU_WAIT="${EMU_WAIT:-120}" ;;
+  *) echo "error: APP desconocida: $APP (hello|bench|check)" >&2; exit 1 ;;
 esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOOLS="$ROOT/vita/tools"

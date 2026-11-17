@@ -209,6 +209,11 @@ class Goal2CTests : public ::testing::Test {
     sa.sa_flags = SA_SIGINFO;
     sigaction(SIGFPE, &sa, nullptr);
     shared = std::make_unique<Shared>();
+    // grabación de los casos de comprobación en ARM (Goal2CTests.Arm*): el runtime registra el
+    // builtin __g2c-rec y deja los .rec/.img en esta carpeta
+    const auto check_dir = file_util::get_jak_project_dir() / "out" / "goal2c" / "jak1" / "check";
+    file_util::create_dir_if_needed(check_dir);
+    setenv("GOAL2C_REC", check_dir.string().c_str(), 1);
     shared->compiler.run_test_no_load("test/goalc/source_templates/with_game/test-build-game.gc");
     shared->runtime_thread = std::thread(GoalTest::runtime_with_kernel_jak1);
     shared->compiler.run_test_from_file("test/goalc/source_templates/with_game/test-load-game.gc");
@@ -218,6 +223,7 @@ class Goal2CTests : public ::testing::Test {
     shared->compiler.shutdown_target();
     shared->runtime_thread.join();
     shared.reset();
+    unsetenv("GOAL2C_REC");
   }
 
   struct Shared {
@@ -412,64 +418,30 @@ const Goal2CFile kGameFiles[] = {
     {"res", "goal_src/jak1/engine/entity/res.gc", "\"lookup-interp\" "},
 };
 
-//! Ficheros validados solo dentro del juego (necesitan niveles, procesos, colisión real...):
-//! objeto idéntico, C que compila limpio, funciones instaladas por el runtime y la prueba de
-//! humo / comprobación de colisión con el juego real (test/goal2c/boot_smoke.sh).
-const Goal2CFile kGameOnlyFiles[] = {
-    {"bounding-box-h", "goal_src/jak1/engine/geometry/bounding-box-h.gc", ""},
-    {"geometry-h", "goal_src/jak1/engine/geometry/geometry-h.gc", ""},
-    {"surface-h", "goal_src/jak1/engine/collide/surface-h.gc", ""},
-    {"pat-h", "goal_src/jak1/engine/collide/pat-h.gc", ""},
-    {"collide-func-h", "goal_src/jak1/engine/collide/collide-func-h.gc", ""},
-    {"collide-mesh-h", "goal_src/jak1/engine/collide/collide-mesh-h.gc", ""},
-    {"collide-shape-h", "goal_src/jak1/engine/collide/collide-shape-h.gc", ""},
-    {"collide-target-h", "goal_src/jak1/engine/collide/collide-target-h.gc", ""},
-    {"collide-touch-h", "goal_src/jak1/engine/collide/collide-touch-h.gc", ""},
-    {"collide-edge-grab-h", "goal_src/jak1/engine/collide/collide-edge-grab-h.gc", ""},
-    {"collide-frag-h", "goal_src/jak1/engine/collide/collide-frag-h.gc", ""},
-    {"collide-cache-h", "goal_src/jak1/engine/collide/collide-cache-h.gc", ""},
-    {"collide-h", "goal_src/jak1/engine/collide/collide-h.gc", ""},
-    {"path-h", "goal_src/jak1/engine/geometry/path-h.gc", ""},
-    {"collide-probe", "goal_src/jak1/engine/collide/collide-probe.gc", ""},
-    {"collide-frag", "goal_src/jak1/engine/collide/collide-frag.gc", ""},
-    {"collide-mesh", "goal_src/jak1/engine/collide/collide-mesh.gc", ""},
-    {"collide-touch", "goal_src/jak1/engine/collide/collide-touch.gc", ""},
-    {"collide-edge-grab", "goal_src/jak1/engine/collide/collide-edge-grab.gc", ""},
-    {"collide-shape", "goal_src/jak1/engine/collide/collide-shape.gc", ""},
-    {"collide-shape-rider", "goal_src/jak1/engine/collide/collide-shape-rider.gc", ""},
-    {"collide", "goal_src/jak1/engine/collide/collide.gc", ""},
-    // collide-planes no está: aparece en all_objs.json pero no tiene fuente .gc en OpenGOAL
-    {"vol-h", "goal_src/jak1/engine/geometry/vol-h.gc", ""},
-    {"main-collide", "goal_src/jak1/engine/collide/main-collide.gc", ""},
-    {"collide-cache", "goal_src/jak1/engine/collide/collide-cache.gc", ""},
-    {"path", "goal_src/jak1/engine/geometry/path.gc", ""},
-    {"vol", "goal_src/jak1/engine/geometry/vol.gc", ""},
-    // engine/math: el resto de cabeceras (casi todo métodos inspect)
-    {"matrix-h", "goal_src/jak1/engine/math/matrix-h.gc", ""},
-    {"quaternion-h", "goal_src/jak1/engine/math/quaternion-h.gc", ""},
-    {"euler-h", "goal_src/jak1/engine/math/euler-h.gc", ""},
-    {"transform-h", "goal_src/jak1/engine/math/transform-h.gc", ""},
-    {"transformq-h", "goal_src/jak1/engine/math/transformq-h.gc", ""},
-    // res-h no está: su inspect autogenerado depende de si entity-links ya está definido del
-    // todo (sesión con el motor compilado) o solo declarado (compilación del juego), así que el
-    // objeto transpilado no coincide con el del juego. Solo tiene métodos inspect.
-    // engine/camera: necesita el juego (procesos de cámara, entidades); ver
-    // test/goal2c/collide_check.sh (compara también la cámara)
-    {"pov-camera-h", "goal_src/jak1/engine/camera/pov-camera-h.gc", ""},
-    {"camera-h", "goal_src/jak1/engine/camera/camera-h.gc", ""},
-    {"cam-debug-h", "goal_src/jak1/engine/camera/cam-debug-h.gc", ""},
-    {"camera", "goal_src/jak1/engine/camera/camera.gc", ""},
-    {"cam-interface", "goal_src/jak1/engine/camera/cam-interface.gc", ""},
-    {"cam-master", "goal_src/jak1/engine/camera/cam-master.gc", ""},
-    {"cam-states", "goal_src/jak1/engine/camera/cam-states.gc", ""},
-    {"cam-states-dbg", "goal_src/jak1/engine/camera/cam-states-dbg.gc", ""},
-    {"cam-combiner", "goal_src/jak1/engine/camera/cam-combiner.gc", ""},
-    {"cam-update", "goal_src/jak1/engine/camera/cam-update.gc", ""},
-    {"cam-layout", "goal_src/jak1/engine/camera/cam-layout.gc", ""},
-    {"cam-debug", "goal_src/jak1/engine/camera/cam-debug.gc", ""},
-    {"cam-start", "goal_src/jak1/engine/camera/cam-start.gc", ""},
-    {"pov-camera", "goal_src/jak1/engine/camera/pov-camera.gc", ""},
+//! Ficheros validados solo dentro del juego (test/goal2c/game_only.txt, lo amplía
+//! goalc/c_backend/tools/validate_batch.py): objeto idéntico, C que compila limpio, funciones
+//! instaladas por el runtime y la prueba de humo, la huella por fotograma y collide_check.sh.
+struct Goal2CGameOnly {
+  std::string obj;
+  std::string src;
 };
+std::vector<Goal2CGameOnly> game_only_files() {
+  std::vector<Goal2CGameOnly> out;
+  std::istringstream in(file_util::read_text_file(file_util::get_jak_project_dir() / "test" /
+                                                  "goal2c" / "game_only.txt"));
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    std::istringstream ls(line);
+    Goal2CGameOnly f;
+    if (ls >> f.obj >> f.src) {
+      out.push_back(f);
+    }
+  }
+  return out;
+}
 
 //! Transpila el fichero, comprueba que su C compila limpio y guarda la referencia de goalc
 //! (los casos ejecutados con el código x86 de goalc) en out/goal2c/jak1/<obj>_reference.txt.
@@ -531,12 +503,36 @@ TEST_F(Goal2CTests, Transformq) {
 TEST_F(Goal2CTests, Res) {
   transpile_and_reference(shared->compiler, kGameFiles[12]);
 }
-//! Ficheros sin casos propios (kGameOnlyFiles): transpilar y comprobar que el C compila limpio.
+/*!
+ * Graba los casos de comprobación en ARM de un lote (test/goal2c/arm/<lote>_arm.gc, con
+ * arm_prelude.gc delante) ejecutándolos en x86: deja out/goal2c/jak1/check/<lote>.rec e .img,
+ * que reproduce goalc/c_backend/check/g2c_check.c (build_check.py en PC, la app JAKV00003 en
+ * la Vita).
+ */
+void record_arm_lot(Compiler& compiler, const std::string& lot) {
+  const auto root = file_util::get_jak_project_dir();
+  const auto dir = root / "test" / "goal2c" / "arm";
+  const auto check_dir = root / "out" / "goal2c" / "jak1" / "check";
+  fs::remove(check_dir / (lot + ".rec"));
+  std::string src = file_util::read_text_file(dir / "arm_prelude.gc") + "\n" +
+                    file_util::read_text_file(dir / (lot + "_arm.gc"));
+  auto out = join_output(compiler.run_test_from_string(src, "g2c-arm-" + lot));
+  EXPECT_EQ(out.find("ERROR"), std::string::npos) << out;
+  ASSERT_TRUE(fs::exists(check_dir / (lot + ".rec")));
+  ASSERT_TRUE(fs::exists(check_dir / (lot + ".img")));
+  auto rec = file_util::read_binary_file(check_dir / (lot + ".rec"));
+  ASSERT_GE(rec.size(), 8u);
+  EXPECT_EQ(std::string((const char*)rec.data() + rec.size() - 4, 4), "END!");
+}
+
+//! Ficheros sin casos propios (game_only.txt): transpilar y comprobar que el C compila limpio.
 TEST_F(Goal2CTests, GameOnlyFiles) {
   const auto root = file_util::get_jak_project_dir();
   const auto out_dir = root / "out" / "goal2c" / "jak1";
-  for (auto& f : kGameOnlyFiles) {
-    const auto c_file = out_dir / (std::string(f.obj) + ".c");
+  auto files = game_only_files();
+  ASSERT_FALSE(files.empty());
+  for (auto& f : files) {
+    const auto c_file = out_dir / (f.obj + ".c");
     shared->compiler.run_front_end_on_string(
         fmt::format("(asm-file \"{}\" :goal2c \"{}\")", f.src, c_file.string()));
     ASSERT_TRUE(fs::exists(c_file)) << f.obj;
@@ -719,7 +715,7 @@ TEST_F(Goal2CMixedTests, GameOnlyFiles) {
   const auto root = file_util::get_jak_project_dir();
   const auto out_dir = root / "out" / "goal2c" / "jak1";
   int total = 0;
-  for (auto& f : kGameOnlyFiles) {
+  for (auto& f : game_only_files()) {
     const std::string obj = f.obj;
     EXPECT_EQ(file_util::read_binary_file(out_dir / (obj + ".c.o")),
               file_util::read_binary_file(root / "out" / "jak1" / "obj" / (obj + ".o")))

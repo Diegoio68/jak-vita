@@ -164,7 +164,9 @@ static inline uint32_t g2c_f_to_bits(float f) {
    Se calcula como entero y se convierte a puntero (no como g2c_mem + a): una dirección GOAL
    puede apuntar fuera del bloque g2c_mem (p. ej. la pila de C de goal2c, g2c_stk), y con
    aritmética de punteros el compilador podría suponer que nunca toca otros objetos. */
+#ifndef G2C_ADDR /* la app de comprobación (goalc/c_backend/check) lo redefine */
 #define G2C_ADDR(a) ((uint8_t*)((uintptr_t)g2c_mem + (uintptr_t)(a)))
+#endif
 #define G2C_DEF_LOAD(name, T)                   \
   static inline T name(g2c_gpr a) {             \
     T v;                                        \

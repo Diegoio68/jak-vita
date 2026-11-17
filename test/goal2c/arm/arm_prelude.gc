@@ -1,0 +1,76 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): preludio de los casos de comprobación en ARM (test/goal2c/arm/*_arm.gc).
+;;
+;; Cada caso llama a una función de cálculo en x86 (goalc) con sus datos de entrada en una
+;; "arena" de 16 KB del heap global. El runtime (GOAL2C_REC) graba la imagen de la memoria GOAL
+;; al empezar, y por cada caso los argumentos, la arena antes y después y el valor devuelto.
+;; La app de comprobación (goalc/c_backend/check/g2c_check.c, en PC y en la Vita) reproduce
+;; cada caso con el C de goal2c sobre esa imagen y compara.
+;;
+;; Reglas para escribir casos:
+;; - Los argumentos de g2c-arm deben ser expresiones sin efectos (variables, constantes): se
+;;   evalúan dos veces (al grabarlos y al llamar).
+;; - Todos los datos de entrada en la arena (g2c-alloc / g2c-vec / g2c-mat). Lo que el caso
+;;   cambie fuera de la arena antes de la llamada NO se reproduce.
+;; - Solo funciones con argumentos GPR (enteros, punteros, float), no de 128 bits.
+;; - g2c-arm-none para funciones que devuelven none (el retorno no se compara).
+
+(define-extern __g2c-rec (function int object object object int))
+
+(defconstant G2C_ARENA_SIZE #x4000)
+(define *g2c-arena* (the-as pointer (new 'global 'inline-array 'vector (/ G2C_ARENA_SIZE 16))))
+(define *g2c-arena-top* 0)
+
+(defun g2c-arena-reset ()
+  "vacía la arena (a cero)"
+  (set! *g2c-arena-top* 0)
+  (dotimes (i (/ G2C_ARENA_SIZE 8))
+    (set! (-> (the-as (pointer uint64) *g2c-arena*) i) 0))
+  0)
+
+(defun g2c-alloc ((size int))
+  "reserva size bytes de la arena, alineados a 16"
+  (let ((p (&+ *g2c-arena* *g2c-arena-top*)))
+    (set! *g2c-arena-top* (logand -16 (+ *g2c-arena-top* size 15)))
+    (when (> *g2c-arena-top* G2C_ARENA_SIZE)
+      (format 0 "ERROR: arena de g2c llena~%"))
+    p))
+
+(defun g2c-vec ((x float) (y float) (z float) (w float))
+  (let ((v (the-as vector (g2c-alloc 16))))
+    (set! (-> v x) x)
+    (set! (-> v y) y)
+    (set! (-> v z) z)
+    (set! (-> v w) w)
+    v))
+
+(defun g2c-mat ((a float) (b float) (c float) (d float)
+                (e float) (f float) (g float) (h float))
+  "matriz con filas (a b c 0) (d e f 0) (g h 1 0) (a e h 1): no singular, nada especial"
+  (let ((m (the-as matrix (g2c-alloc 64))))
+    (set-vector! (-> m vector 0) a b c 0.0)
+    (set-vector! (-> m vector 1) d e f 0.0)
+    (set-vector! (-> m vector 2) g h 1.0 0.0)
+    (set-vector! (-> m vector 3) a e h 1.0)
+    m))
+
+(defmacro g2c-arm (label fname &rest args)
+  "graba un caso: (g2c-arm \"etiqueta\" funcion arg...)"
+  `(begin
+     ,@(apply (lambda (a) `(__g2c-rec 1 (the-as object ,a) 0 0)) args)
+     (__g2c-rec 2 ,label (quote ,fname) 0)
+     (__g2c-rec 3 (the-as object (,fname ,@args)) 0 0)))
+
+(defmacro g2c-arm-none (label fname &rest args)
+  "como g2c-arm, para funciones que devuelven none"
+  `(begin
+     ,@(apply (lambda (a) `(__g2c-rec 1 (the-as object ,a) 0 0)) args)
+     (__g2c-rec 2 ,label (quote ,fname) 1)
+     (,fname ,@args)
+     (__g2c-rec 3 0 0 0)))
+
+(defmacro g2c-arm-begin (name)
+  `(begin (g2c-arena-reset) (__g2c-rec 0 ,name *g2c-arena* G2C_ARENA_SIZE)))
+
+(defmacro g2c-arm-end ()
+  `(__g2c-rec 4 0 0 0))
