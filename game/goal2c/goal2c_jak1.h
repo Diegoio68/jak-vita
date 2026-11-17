@@ -43,4 +43,11 @@ void scripted_pad(unsigned long long cpad_info);
 //! Con GOAL2C_GRABAR=<fichero>, scripted_pad graba el mando 0 en formato de recorrido.
 bool deterministic_mode();
 
+//! Sonido determinista (det_sound_jak1.cpp): en modo determinista *sound-iop-info* (strpos...)
+//! lo calcula el EE a partir de las órdenes de stream del juego (RPC de canal 5), no el IOP.
+bool det_sound_on();
+void det_play_rpc(const void* send, int size);
+void det_sound_frame();
+void det_sound_reset();
+
 }  // namespace goal2c_runtime

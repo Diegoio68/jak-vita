@@ -68,6 +68,10 @@ u64 RpcCall_wrapper(void* _args) {
   auto send_size = args->get_as<s32>(4);
   auto recv_buff = args->get_as<u64>(5);
   auto recv_size = args->get_as<s32>(6);
+  // goal2c (Jak Vita): en modo determinista, el sonido que ve el juego sale de estas órdenes
+  if (rpcChannel == PLAY_RPC_CHANNEL && g_game_version == GameVersion::Jak1) {
+    goal2c_runtime::det_play_rpc(Ptr<u8>(send_buff).c(), send_size);
+  }
   return sceSifCallRpc(&cd[rpcChannel], fno, async, Ptr<u8>(send_buff).c(), send_size,
                        Ptr<u8>(recv_buff).c(), recv_size, nullptr, nullptr);
 }

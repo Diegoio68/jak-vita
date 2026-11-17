@@ -1,5 +1,7 @@
 #include "srpc.h"
 
+#include "game/goal2c/goal2c_jak1.h"  // goal2c (Jak Vita)
+
 #include <cstdio>
 #include <cstring>
 
@@ -477,6 +479,12 @@ s32 VBlank_Handler(void*) {
   //  }
   //  dmaid = 0;
   //}
+
+  // goal2c (Jak Vita): en modo determinista esta información la calcula el EE
+  // (game/goal2c/det_sound_jak1.cpp): aquí depende del tiempo real
+  if (goal2c_runtime::det_sound_on()) {
+    return 1;
+  }
 
   info.frame = gFrameNum;
   info.strpos = GetVAGStreamPos();

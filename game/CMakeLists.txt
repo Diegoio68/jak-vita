@@ -120,6 +120,7 @@ set(RUNTIME_SOURCE
         kernel/jak1/kdgo.cpp
         kernel/jak1/klink.cpp
         goal2c/goal2c_jak1.cpp  # goal2c (Jak Vita)
+        goal2c/det_sound_jak1.cpp  # goal2c (Jak Vita)
         kernel/jak1/klisten.cpp
         kernel/jak1/kmachine.cpp
         kernel/jak1/kprint.cpp

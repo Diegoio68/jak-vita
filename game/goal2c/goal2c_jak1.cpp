@@ -554,7 +554,8 @@ void segv_handler(int sig, siginfo_t* info, void* vctx) {
   }
   // pila de llamadas por rbp (fiable con la librería compilada con --debug, -O0)
   u64* fp = (u64*)uc->uc_mcontext.gregs[REG_RBP];
-  for (int depth = 0; depth < 8 && fp; depth++) {
+  // (en código GOAL rbp es un registro más: solo se sigue si apunta a la pila)
+  for (int depth = 0; depth < 8 && (u64)fp > rsp && (u64)fp < rsp + 0x100000; depth++) {
     void* ret = (void*)fp[1];
     Dl_info d{};
     if (!dladdr(ret, &d) || !d.dli_fname || !strstr(d.dli_fname, "goal2c")) {
@@ -570,7 +571,7 @@ void segv_handler(int sig, siginfo_t* info, void* vctx) {
   // Señal enviada a mano (kill/tgkill: SI_USER/SI_TKILL), para ver dónde está un proceso
   // colgado: lista los valores de la pila que parecen direcciones de retorno (gk, librerías o
   // código GOAL). Heurístico (sin marcos fiables en -O2), pero suele bastar.
-  if (info->si_code == SI_USER || info->si_code == SI_TKILL) {
+  {  // en cualquier fallo (también señal enviada a mano)
     u64 mem = (u64)g_ee_main_mem;
     u64* sp = (u64*)rsp;
     int shown = 0;
@@ -1114,6 +1115,10 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     g_fingerprint_frame = 0;
     g_vclock_in_frame = 0;
     g_script_start = -1;
+    det_sound_reset();
+    if (deterministic_mode()) {
+      install_segv_handler();  // también en x86 puro (diagnóstico de la huella y la grabación)
+    }
   }
   if (g_files.empty()) {
     return;
@@ -1591,6 +1596,7 @@ void scripted_pad(unsigned long long cpad_info) {
 
 void frame_fingerprint(u32 chain) {
   static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
+  det_sound_frame();  // modo determinista: *sound-iop-info* del fotograma
   if (!enabled) {
     if (deterministic_mode()) {  // grabación: reloj virtual y contador, sin hash
       g_vclock_in_frame = 0;

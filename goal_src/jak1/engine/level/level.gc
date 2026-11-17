@@ -659,6 +659,15 @@
   "Unloads the level. This does not free the heap. The level will be made inactive and ready to be loaded some other time."
   (deactivate this)
   (when (!= (-> this status) 'inactive)
+    ;; CAMBIO JAK VITA (inicio): si el nivel se descarta a mitad de enlazar un objeto (p. ej. al
+    ;; saltar la intro mientras se carga Misty), el enlazador (global) lo terminaba después, con
+    ;; el siguiente nivel: su top-level registraba grupos de partículas en un heap ya descartado
+    ;; y el juego caía más tarde en lookup-part-group-pointer-by-name. Se termina aquí, antes de
+    ;; limpiar el heap, para que la limpieza de abajo también quite lo que registre.
+    (when (-> this linking)
+      (while (zero? (link-resume)))
+      (set! (-> this linking) #f))
+    ;; CAMBIO JAK VITA (fin)
     ;; if we linked art group, unlink it.
     (when (or (= (-> this status) 'loaded) (= (-> this status) 'alive) (= (-> this status) 'active) (= (-> this status) 'login))
       (dotimes (s5-0 (-> this art-group art-group-array length))

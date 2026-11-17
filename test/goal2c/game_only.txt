@@ -262,3 +262,4 @@ target-handler goal_src/jak1/engine/target/target-handler.gc
 target goal_src/jak1/engine/target/target.gc
 target2 goal_src/jak1/engine/target/target2.gc
 target-death goal_src/jak1/engine/target/target-death.gc
+bones goal_src/jak1/engine/gfx/foreground/bones.gc

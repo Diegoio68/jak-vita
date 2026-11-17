@@ -9,6 +9,14 @@ Después Jak 2 y Jak 3.
   los resúmenes finales. Aunque los logs, el código o las salidas estén en inglés.
   (Se incumplió dos veces el 2026-11-16 en tareas largas.)
 
+## Puntos de control (no negociable, 2026-11-17)
+1. Al terminar cada lote o tarea grande: reporte de 5 líneas como máximo (qué se logró, avance %,
+   qué sigue, qué se necesita de Diego) y ESPERAR su "sigue" antes de continuar.
+2. Mantener PROGRESO.md actualizado en cada punto de control: fases, lotes, %, último logro,
+   siguiente paso.
+3. Si Diego tiene que probar o jugar algo: decírselo con pasos exactos y NO lanzar juegos (gk)
+   mientras prueba (comparten el puerto del listener, la CPU y test/goal2c/recorrido_oficial.txt).
+
 ## Reglas legales (no negociables)
 - NUNCA commitear datos del juego: ISOs, DGOs, texturas, audio, archivos extraídos.
   Viven en iso_data/, decompiler_out/, out/ y deben estar en .gitignore.
@@ -49,6 +57,9 @@ Después Jak 2 y Jak 3.
 Marcados en el código entre `;; CAMBIO JAK VITA (inicio)` y `;; CAMBIO JAK VITA (fin)`
 (`grep -rn "CAMBIO JAK VITA" goal_src`). Revisarlos en cada merge de upstream.
 - engine/gfx/foreground/bones.gc (draw-bones): pesos de blerc a cero (aprobado 2026-11-17).
+- engine/level/level.gc (unload!): termina el enlace en curso del nivel antes de limpiarlo
+  (cierre del juego tras saltar la intro y coger la primera célula; 2026-11-17, pendiente de
+  aprobar).
 
 ## Arquitectura objetivo
 goal_src/ (GOAL decompilado, ya existe)
@@ -181,6 +192,13 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   test/goal2c/recorrido_oficial.txt si existe, también con config limpia) se compara la posición:
   "DESINCRONIZADO" = la grabación no se reproduce igual. Probado: grabar con ventana y GPU y
   reproducir sin ventana -> sincronía exacta y huella x86 = C.
+  Sonido determinista (game/goal2c/det_sound_jak1.cpp): el vblank del IOP (que escribe
+  *sound-iop-info*: strpos, str-id) va con el vsync del renderer y strpos con lo que suena de
+  verdad -> las cinemáticas (ja-play-spooled-anim) se desincronizaban. En modo determinista el
+  IOP no lo copia; el EE lo calcula cada fotograma desde las órdenes del RPC de streams (canal 5)
+  con reloj virtual y la duración de la cabecera VAG. GOAL2C_SONIDO_REAL=1 = comportamiento
+  anterior (diagnóstico). Probado: 406 puntos de sincronía (6,8 min, 8 streams) sin ventana.
+- PROGRESO.md: estado del proyecto para Diego (actualizarlo en cada punto de control).
 - Diagnóstico: GOAL2C_FN_X86=nombre,... deja esas funciones en x86; GOAL2C_PP_X86 /
   GOAL2C_PP_SOLO=obj,... para bisecar las que escriben pp. Proceso colgado: enviar SIGSEGV al
   hilo EE (tgkill) y el manejador lista la pila (direcciones de gk, librerías y GOAL).
