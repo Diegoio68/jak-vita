@@ -252,3 +252,13 @@ anim-tester goal_src/jak1/engine/debug/anim-tester.gc
 viewer goal_src/jak1/engine/debug/viewer.gc
 part-tester goal_src/jak1/engine/debug/part-tester.gc
 default-menu goal_src/jak1/engine/debug/default-menu.gc
+target-h goal_src/jak1/engine/target/target-h.gc
+target-util goal_src/jak1/engine/target/target-util.gc
+target-part goal_src/jak1/engine/target/target-part.gc
+collide-reaction-target goal_src/jak1/engine/target/collide-reaction-target.gc
+logic-target goal_src/jak1/engine/target/logic-target.gc
+sidekick goal_src/jak1/engine/target/sidekick.gc
+target-handler goal_src/jak1/engine/target/target-handler.gc
+target goal_src/jak1/engine/target/target.gc
+target2 goal_src/jak1/engine/target/target2.gc
+target-death goal_src/jak1/engine/target/target-death.gc
