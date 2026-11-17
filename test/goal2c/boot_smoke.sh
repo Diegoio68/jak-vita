@@ -34,6 +34,13 @@ if grep -q "SIGSEGV" <<<"$clean"; then
   grep -E "SIGSEGV|llamado desde" <<<"$clean" | head -10
   status=1
 fi
+# suspend copia la pila del proceso a un área pequeña: si un marco de C quedara en medio, el
+# kernel lo detecta (break / mensaje con KERNEL_DEBUG)
+if grep -q "suspend called without enough stack" <<<"$clean"; then
+  echo "FALLO: suspend sin pila suficiente (¿código C en la pila de un proceso que suspende?)"
+  grep -A2 "suspend called without enough stack" <<<"$clean" | head -6
+  status=1
+fi
 installed="$(grep -E "\[goal2c\] [^ ]+: [0-9]+ funciones en C" <<<"$clean")"
 if ! grep -qE ": [1-9][0-9]* funciones en C" <<<"$installed"; then
   echo "FALLO: no se instaló ninguna función en C"

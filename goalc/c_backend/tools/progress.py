@@ -6,7 +6,9 @@ Cifras (todas en número de funciones; no cuenta el código top-level de cada fi
                  versión 3, con fuente .gc).
   - traducibles: las que goal2c ya traduce sin error (aunque no estén validadas en el juego).
   - en C:        las de los ficheros VALIDADOS en el juego (los .c de out/goal2c/jak1/, que son
-                 los que van en la librería del modo mixto y en test/goalc/test_goal2c.cpp).
+                 los que van en la librería del modo mixto y en test/goalc/test_goal2c.cpp),
+                 sin las marcadas G2C_FN_WRITES_PP (suspend/with-proc: el modo mixto las deja en
+                 x86; se cuentan aparte).
 
 Para "total" y "traducibles" ejecuta goal2c sobre todos los ficheros en una sola sesión de goalc
 (tras (mi)), escribiendo en out/goal2c/jak1/all/ (fuera de la librería del juego).
@@ -29,7 +31,7 @@ ALL = OUT / "all"
 GOALC = ROOT / "build" / "goalc" / "goalc"
 LINE_RE = re.compile(r"\[goal2c\] (\S+): (\d+) funciones traducidas, (\d+) sin traducir")
 INFO_RE = re.compile(r"^const g2c_file_info \w+ = ", re.MULTILINE)
-ENTRY_RE = re.compile(r'^  \{"[^"]*", \(void\*\)', re.MULTILINE)
+ENTRY_RE = re.compile(r'^  \{"[^"]*", \(void\*\).*$', re.MULTILINE)
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -62,14 +64,16 @@ def run_goalc(objs):
 
 
 def validated_counts():
-    """obj -> funciones en C (entradas de la tabla de cada .c validado)."""
+    """obj -> (funciones en C, funciones que escriben pp) de cada .c validado."""
     counts = {}
     for c in OUT.glob("*.c"):
         if c.name == "registry.c":
             continue
         text = c.read_text(encoding="utf-8")
         if INFO_RE.search(text):
-            counts[c.stem] = len(ENTRY_RE.findall(text))
+            entries = ENTRY_RE.findall(text)
+            pp = sum(1 for e in entries if "G2C_FN_WRITES_PP" in e)
+            counts[c.stem] = (len(entries) - pp, pp)
     return counts
 
 
@@ -90,7 +94,7 @@ def main():
     in_c = validated_counts()
 
     per_folder = collections.OrderedDict()
-    total = translatable = done = 0
+    total = translatable = done = kept_pp = 0
     failed = []
     for name, folder, _src in objs:
         if name not in results:
@@ -98,7 +102,8 @@ def main():
             continue
         ok, bad = results[name]
         n = ok + bad
-        c = in_c.get(name, 0)
+        c, pp = in_c.get(name, (0, 0))
+        kept_pp += pp
         row = per_folder.setdefault(folder, [0, 0, 0, 0])  # ficheros, total, traducibles, en C
         row[0] += 1
         row[1] += n
@@ -117,6 +122,8 @@ def main():
     if failed:
         lines.append(f"sin datos (goalc no los compiló aparte): {len(failed)}: {', '.join(failed[:20])}"
                      + (" ..." if len(failed) > 20 else ""))
+    if kept_pp:
+        lines.append(f"en ficheros validados pero en x86 por escribir pp (suspend/with-proc): {kept_pp}")
     summary = (f"Avance goal2c: {done}/{total} funciones de goal_src/jak1 en C dentro del juego "
                f"({pct(done, total):.1f} %); goal2c ya traduce {translatable}/{total} "
                f"({pct(translatable, total):.1f} %).")

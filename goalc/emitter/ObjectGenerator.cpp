@@ -143,6 +143,13 @@ FunctionRecord ObjectGenerator::add_function_to_seg(int seg,
   return rec;
 }
 
+void ObjectGenerator::get_function_location(int f_idx, int* seg, int* offset, int* length) const {
+  const auto& rec = m_all_function_records.at(f_idx);
+  *seg = rec.seg;
+  *offset = (int)rec.debug->offset_in_seg;
+  *length = (int)rec.debug->length;
+}
+
 FunctionRecord ObjectGenerator::get_existing_function_record(int f_idx) {
   return m_all_function_records.at(f_idx);
 }

@@ -57,12 +57,22 @@ uint32_t g2c_rt_symbol(const char* name);
    el runtime (o el arnés). Devuelve el comienzo del objeto estático. */
 uint32_t g2c_rt_static(const char* obj_name, int seg, int offset);
 
+/* flags de g2c_func_entry */
+/* La función escribe pp (suspend, with-proc...). En el modo mixto de PC no se instala: suspend
+   copia la pila del proceso a un área de 256 bytes y los marcos de C + trampolines no caben. */
+#define G2C_FN_WRITES_PP 1
+
 /* Entrada de la tabla de funciones de un fichero generado. */
 typedef struct {
-  const char* name;  /* nombre GOAL ("lerp-clamp") o "(method <id> <tipo>)" */
-  void* fn;          /* puntero a la función C: g2c_gpr f(g2c_gpr a0, ...) */
-  int nargs;         /* número de argumentos (todos g2c_gpr) */
-  void* fn_arr;      /* si nargs > 6: g2c_gpr f(const uint64_t* args8); si no, NULL */
+  const char* name; /* nombre GOAL ("lerp-clamp"), "(method <id> <tipo>)" o "anon-function-N" */
+  void* fn;         /* puntero a la función C: g2c_gpr f(g2c_gpr a0, ...) (o con g2c_q) */
+  int nargs;        /* número de argumentos */
+  void* fn_arr;     /* si nargs > 6 y todos GPR: g2c_gpr f(const uint64_t* args8); si no, NULL */
+  void* fn_q;       /* si hay argumentos o retorno de 128 bits (g2c_q):
+                       g2c_gpr f(const uint64_t* g8, const g2c_q* q8, g2c_q* qret); si no, NULL */
+  int flags;        /* G2C_FN_* */
+  int seg, offset, length; /* objeto función en el objeto de goalc (segmento, posición de la
+                              primera instrucción, longitud del código); seg -1 si no se sabe */
 } g2c_func_entry;
 
 /* Descripción de un fichero generado: lo que necesita el runtime para enlazarlo. */
@@ -83,6 +93,8 @@ typedef struct {
   uint32_t (*static_addr)(const char* obj, int seg, int off);      /* g2c_rt_static */
   uint64_t (*call)(uint32_t fn, int nargs, const uint64_t* args);  /* g2c_host_call */
   uint64_t* pp;                                                    /* g2c_pp_ptr */
+  /* g2c_host_call_q: llamada con argumentos/retorno de 128 bits (q8 y qret son g2c_q) */
+  uint64_t (*call_q)(uint32_t fn, const uint64_t* g8, const void* q8, void* qret);
 } g2c_host;
 typedef const g2c_file_info* const* (*g2c_init_fn)(const g2c_host* host);
 
@@ -214,6 +226,14 @@ typedef union {
   uint8_t b[16];
   int8_t sb[16];
 } __attribute__((aligned(16))) g2c_q;
+
+#ifdef G2C_PC_MIXED
+/* Llamada a una función GOAL con argumentos o retorno de 128 bits (modo mixto de PC): g8 son
+   los argumentos GPR por orden, q8 los de 128 bits por orden (xmm1..xmm8 en goalc x86; NULL si
+   no hay ninguno); el retorno de 128 bits (xmm0) queda en *qret y el GPR (rax) es el valor
+   devuelto. */
+uint64_t g2c_host_call_q(uint32_t fn, const uint64_t* g8, const g2c_q* q8, g2c_q* qret);
+#endif
 
 static inline g2c_q g2c_ld_q(g2c_gpr a) {
   g2c_q v;

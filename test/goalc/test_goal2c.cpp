@@ -407,6 +407,9 @@ const Goal2CFile kGameFiles[] = {
     {"bounding-box", "goal_src/jak1/engine/geometry/bounding-box.gc", "\"add-box\" "},
     {"cylinder", "goal_src/jak1/engine/geometry/cylinder.gc", "\"capsule-1\" "},
     {"collide-func", "goal_src/jak1/engine/collide/collide-func.gc", "\"ray-sphere\" "},
+    {"vector-h", "goal_src/jak1/engine/math/vector-h.gc", "\"dot4-vu\" "},
+    {"transformq", "goal_src/jak1/engine/math/transformq.gc", "\"matrix<-world-trans\" "},
+    {"res", "goal_src/jak1/engine/entity/res.gc", "\"lookup-interp\" "},
 };
 
 //! Ficheros validados solo dentro del juego (necesitan niveles, procesos, colisión real...):
@@ -441,6 +444,31 @@ const Goal2CFile kGameOnlyFiles[] = {
     {"collide-cache", "goal_src/jak1/engine/collide/collide-cache.gc", ""},
     {"path", "goal_src/jak1/engine/geometry/path.gc", ""},
     {"vol", "goal_src/jak1/engine/geometry/vol.gc", ""},
+    // engine/math: el resto de cabeceras (casi todo métodos inspect)
+    {"matrix-h", "goal_src/jak1/engine/math/matrix-h.gc", ""},
+    {"quaternion-h", "goal_src/jak1/engine/math/quaternion-h.gc", ""},
+    {"euler-h", "goal_src/jak1/engine/math/euler-h.gc", ""},
+    {"transform-h", "goal_src/jak1/engine/math/transform-h.gc", ""},
+    {"transformq-h", "goal_src/jak1/engine/math/transformq-h.gc", ""},
+    // res-h no está: su inspect autogenerado depende de si entity-links ya está definido del
+    // todo (sesión con el motor compilado) o solo declarado (compilación del juego), así que el
+    // objeto transpilado no coincide con el del juego. Solo tiene métodos inspect.
+    // engine/camera: necesita el juego (procesos de cámara, entidades); ver
+    // test/goal2c/collide_check.sh (compara también la cámara)
+    {"pov-camera-h", "goal_src/jak1/engine/camera/pov-camera-h.gc", ""},
+    {"camera-h", "goal_src/jak1/engine/camera/camera-h.gc", ""},
+    {"cam-debug-h", "goal_src/jak1/engine/camera/cam-debug-h.gc", ""},
+    {"camera", "goal_src/jak1/engine/camera/camera.gc", ""},
+    {"cam-interface", "goal_src/jak1/engine/camera/cam-interface.gc", ""},
+    {"cam-master", "goal_src/jak1/engine/camera/cam-master.gc", ""},
+    {"cam-states", "goal_src/jak1/engine/camera/cam-states.gc", ""},
+    {"cam-states-dbg", "goal_src/jak1/engine/camera/cam-states-dbg.gc", ""},
+    {"cam-combiner", "goal_src/jak1/engine/camera/cam-combiner.gc", ""},
+    {"cam-update", "goal_src/jak1/engine/camera/cam-update.gc", ""},
+    {"cam-layout", "goal_src/jak1/engine/camera/cam-layout.gc", ""},
+    {"cam-debug", "goal_src/jak1/engine/camera/cam-debug.gc", ""},
+    {"cam-start", "goal_src/jak1/engine/camera/cam-start.gc", ""},
+    {"pov-camera", "goal_src/jak1/engine/camera/pov-camera.gc", ""},
 };
 
 //! Transpila el fichero, comprueba que su C compila limpio y guarda la referencia de goalc
@@ -494,8 +522,17 @@ TEST_F(Goal2CTests, Cylinder) {
 TEST_F(Goal2CTests, CollideFunc) {
   transpile_and_reference(shared->compiler, kGameFiles[9]);
 }
-//! collide/geometry sin casos propios: transpilar y comprobar que el C compila limpio.
-TEST_F(Goal2CTests, CollideGeometryGameOnly) {
+TEST_F(Goal2CTests, VectorH) {
+  transpile_and_reference(shared->compiler, kGameFiles[10]);
+}
+TEST_F(Goal2CTests, Transformq) {
+  transpile_and_reference(shared->compiler, kGameFiles[11]);
+}
+TEST_F(Goal2CTests, Res) {
+  transpile_and_reference(shared->compiler, kGameFiles[12]);
+}
+//! Ficheros sin casos propios (kGameOnlyFiles): transpilar y comprobar que el C compila limpio.
+TEST_F(Goal2CTests, GameOnlyFiles) {
   const auto root = file_util::get_jak_project_dir();
   const auto out_dir = root / "out" / "goal2c" / "jak1";
   for (auto& f : kGameOnlyFiles) {
@@ -667,9 +704,18 @@ TEST_F(Goal2CMixedTests, CylinderInGame) {
 TEST_F(Goal2CMixedTests, CollideFuncInGame) {
   compare_in_game(shared->compiler, lib_build_output, kGameFiles[9]);
 }
+TEST_F(Goal2CMixedTests, VectorHInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[10]);
+}
+TEST_F(Goal2CMixedTests, TransformqInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[11]);
+}
+TEST_F(Goal2CMixedTests, ResInGame) {
+  compare_in_game(shared->compiler, lib_build_output, kGameFiles[12]);
+}
 //! Los ficheros sin casos: objeto idéntico al que carga el juego y funciones instaladas.
 //! (Las cabeceras -h sin funciones propias no instalan nada: solo se exige el objeto.)
-TEST_F(Goal2CMixedTests, CollideGeometryGameOnly) {
+TEST_F(Goal2CMixedTests, GameOnlyFiles) {
   const auto root = file_util::get_jak_project_dir();
   const auto out_dir = root / "out" / "goal2c" / "jak1";
   int total = 0;
@@ -680,6 +726,6 @@ TEST_F(Goal2CMixedTests, CollideGeometryGameOnly) {
         << obj;
     total += goal2c_runtime::replaced_functions(obj.c_str());
   }
-  lg::print("[goal2c] collide/geometry sin casos: {} funciones en C dentro del juego\n", total);
+  lg::print("[goal2c] ficheros sin casos: {} funciones en C dentro del juego\n", total);
   EXPECT_GT(total, 0);
 }

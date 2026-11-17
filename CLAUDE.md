@@ -133,15 +133,40 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
 - pp (r13: self en behaviors, with-pp) -> G2C_PP, variable global del runtime (en modo mixto
   apunta al g_pp del runtime). self NO es argumento de la firma C. rsp/r14/r15 son de solo
   lectura (G2C_SP_REG = marco de C actual, tabla de símbolos = #f, G2C_BASE_REG = g2c_mem).
-- Validados en el juego (2026-11-16): engine/math entero, engine/geometry y engine/collide
-  (con casos: geometry, bounding-box, cylinder, collide-func; el resto "solo en el juego").
+  OJO: un rlet que reutiliza un registro ya restringido (pp dentro de un behavior, el 2.º
+  with-pp de una función) crea una RegVal SIN rlet_constraint; la restricción solo está en
+  FunctionEnv::constraints() (contrain_everywhere). CFunctionWriter las mira por ireg. Antes
+  de arreglarlo (2026-11-16) pp salía como una local a 0 en collide-shape, path-h, etc.
+- Validados en el juego (2026-11-16): engine/math entero (con casos también vector-h y
+  transformq), engine/geometry, engine/collide, engine/camera entero (solo en el juego) y
+  engine/entity/res (con casos: prueba la ABI de 128 bits). res-h no: su inspect autogenerado
+  depende de si entity-links está ya definido, y el objeto no sale idéntico.
+- Funciones que escriben pp (suspend, with-proc): se traducen pero llevan G2C_FN_WRITES_PP y
+  el modo mixto las deja en x86. suspend copia la pila del proceso a un área de 256 bytes
+  (PROCESS_STACK_SAVE_SIZE) y los trampolines + marcos de C no caben. En la Vita (Fase 3)
+  suspend necesitará otro mecanismo (pilas propias por proceso o similar).
+- Lambdas (mov-fa) y funciones sin símbolo ni método (estados, behaviors anónimos): el C
+  obtiene la dirección del objeto función en el objeto cargado (g2c_fn[], como los
+  estáticos). En el modo mixto el runtime PARCHEA in situ su código x86 con
+  `movabs rax, entrada; jmp rax` (12 bytes; si la función es más corta se queda en x86).
+  En la Vita el cargador deberá escribir el puntero C nativo en el objeto función.
+- Variables con la dirección tomada ((& var)): local de C cuya dirección escapa con
+  `__asm__ volatile("" : : "r"(&var) : "memory")`; el puntero GOAL es &var - g2c_mem.
+- Los .gc decompilados leen a veces registros nunca escritos (valores indefinidos del MIPS
+  original): en x86 es basura, en C 0. No es un fallo de goal2c.
 - Funciones TRAMPA de OpenGOAL (no las usa el juego; abortan a propósito con (crash!) o
   (/ 0 0)): matrix-axis-sin-cos-vu!, circle-circle-xz-intersect (y vector-circle-tangent-new,
   que la llama), raw-ray-sphere-intersect, dma-sync-crash. No llamarlas en los casos.
 - Ficheros "solo en el juego" (tabla kGameOnlyFiles): objeto idéntico, C que compila limpio,
-  funciones instaladas, prueba de humo y, para colisión, `test/goal2c/collide_check.sh`:
-  posición de Jak en reposo, todo x86 frente a modo mixto, debe ser idéntica bit a bit
-  (comprobado con mutación: collide-cache roto -> Jak a otra altura).
+  funciones instaladas, prueba de humo y, para colisión y cámara,
+  `test/goal2c/collide_check.sh`: posición de Jak en reposo y cámara (posición, fov y matriz
+  del combinador), todo x86 frente a modo mixto, deben ser idénticas bit a bit (comprobado con
+  mutación: collide-cache roto -> Jak a otra altura; slave-set-rotation! roto -> matriz a 0).
+  `CHECK_X86_TWICE=1` compara dos ejecuciones x86 (la medida es determinista).
+- res-lump en los casos: `new res-lump` deja `tag` (un puntero en OpenGOAL) a 0; hay que darle
+  tabla de tags y zona de datos a mano (ver res_cases.gc).
+- En los casos, un trsqv (basic) se pasa como transformq con `(the-as transformq (-> x trans))`:
+  `(the-as transformq x)` queda desalineado y el movaps de x86 da SIGSEGV.
 - Hablar con el juego desde un script: REPL de goalc por tubería, línea a línea
   ((mi), (lt), consulta, (:exit) con esperas). `goalc -c` NO sirve: compila antes de conectar.
 - Cuidado con lecturas de 16 bytes de estructuras de 12 (vector3s): arrastran 4 bytes del
@@ -155,8 +180,9 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   total de funciones, traducibles (goal2c las traduce) y en C (validadas en el juego = los .c
   de out/goal2c/jak1/). Tabla por carpeta en out/goal2c/jak1/progress.txt.
 - Línea a copiar al final de la entrega: la última que imprime ("Avance goal2c: ...").
-- Bloqueos tras soportar pp (2026-11-16): llamadas con argumentos/retorno de 128 bits (ABI
-  xmm), lambdas anónimas (mov-fa) y variables con la dirección tomada; ver progress.py.
+- Lo que queda sin traducir (2026-11-16, 11 funciones): asm-func (8, kernel) y .push/.add
+  de registros (3, gkernel/gstate). Las G2C_FN_WRITES_PP cuentan como traducibles pero no
+  "en C" (se listan aparte).
 - OBLIGATORIO además: `test/goal2c/boot_smoke.sh` (juego real sin ventana 45 s con la
   librería; exige que no falle, que instale funciones y que avance tras cargar el nivel).
   Los tests de goalc-test NO ejecutan código en la pila x86 nativa; el juego sí.
@@ -174,7 +200,12 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   (ojo con los *_swapped de IGenX86). vmaxps/vminps: con NaN o iguales gana src2.
 - FLOAT -> vector es movss: solo el elemento 0, el resto se CONSERVA. GPR -> vector es movq:
   parte alta a CERO. vector -> GPR: 64 bits bajos.
-- Funciones con parámetros o retorno de 128 bits todavía no se traducen (ABI xmm).
+- ABI de 128 bits (goalc x86: GPR en rdi..r11 por orden entre los GPR, 128 bits en
+  xmm1..xmm8 por orden entre los de 128, retorno en rax o xmm0). En C: parámetros/retorno
+  g2c_q por valor con la firma exacta; la llamada nativa (Vita) castea a esa firma. Modo mixto:
+  x86 -> C por g2c_q_call_systemv + envoltorio `<f>__q(g8, q8, qret)` (campo fn_q de la
+  tabla); C -> x86 por g2c_host_call_q / g2c_call_goal_q (asm en goal2c_jak1.cpp). GOAL
+  conserva rbx, rbp, r10, r11, r12 y xmm8..15 (SysV no conserva r10, r11 ni xmm).
 - Para la Vita: la NaN por defecto de ARM es 0x7fc00000 y la de x86 0xffc00000. Los casos
   con NaN de vector_cases.gc darán otro signo en ARM; la PS2 no tiene NaN, así que el juego
   no debería depender de ello. Comparar en la Vita ignorando el signo de las NaN.

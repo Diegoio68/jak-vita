@@ -73,10 +73,37 @@ std::string mangle(const std::string& goal_name) {
 ///////////////////////////
 
 CFunctionWriter::CFunctionWriter(const FunctionEnv* env, FileState* file)
-    : m_env(env), m_file(file) {}
+    : m_env(env), m_file(file) {
+  for (auto& c : const_cast<FunctionEnv*>(env)->constraints()) {
+    if (c.contrain_everywhere) {
+      m_everywhere[c.ireg.id] = &c;
+    }
+  }
+}
+
+void CFunctionWriter::check_constraints() const {
+  // Los registros con significado propio (pp, rsp, r14, r15) solo se reconocen si la restricción
+  // es "en toda la función" (rlet / self). Una restricción puntual a uno de ellos dejaría una
+  // variable C normal (a cero) donde GOAL lee el registro: mejor no traducir la función.
+  for (auto& c : const_cast<FunctionEnv*>(m_env)->constraints()) {
+    auto r = c.desired_register;
+    bool special = r == emitter::R13 || r == emitter::RSP || r == emitter::R14 || r == emitter::R15;
+    if (special && !c.contrain_everywhere) {
+      unsupported("restricción puntual a un registro especial (pp/rsp/r14/r15)");
+    }
+  }
+}
 
 bool CFunctionWriter::is_gpr(const RegVal* rv) const {
   return rv->ireg().reg_class == RegClass::GPR_64;
+}
+
+bool CFunctionWriter::is_pp(const RegVal* rv) const {
+  if (rv->rlet_constraint().has_value()) {
+    return *rv->rlet_constraint() == emitter::R13;
+  }
+  auto it = m_everywhere.find(rv->ireg().id);
+  return it != m_everywhere.end() && it->second->desired_register == emitter::R13;
 }
 
 bool CFunctionWriter::is_float(const RegVal* rv) const {
@@ -98,10 +125,17 @@ std::string CFunctionWriter::ctype(const RegVal* rv) const {
 }
 
 std::string CFunctionWriter::var(const RegVal* rv) {
-  if (rv->rlet_constraint().has_value()) {
+  std::optional<emitter::Register> constraint = rv->rlet_constraint();
+  if (!constraint.has_value()) {
+    auto it = m_everywhere.find(rv->ireg().id);
+    if (it != m_everywhere.end()) {
+      constraint = it->second->desired_register;
+    }
+  }
+  if (constraint.has_value()) {
     // En C una variable rlet es una variable más: el registro concreto da igual. Salvo los
     // registros con significado propio en GOAL, cuyo valor no existe en el C.
-    auto reg = *rv->rlet_constraint();
+    auto reg = *constraint;
     if (reg == emitter::R13) {
       // r13 = pp, el proceso actual (with-pp, y self en los behaviors). En C es la variable
       // global G2C_PP del runtime: leerla y escribirla es leer y escribir el registro.
@@ -126,10 +160,13 @@ std::string CFunctionWriter::var(const RegVal* rv) {
       return "((g2c_gpr)" + symbol("#f") + ")";  // tabla de símbolos: #f está en su inicio
     }
   }
-  if (rv->forced_on_stack()) {
-    unsupported("variable en la pila (se toma su dirección)");
-  }
   auto id = rv->ireg().id;
+  if (rv->forced_on_stack()) {
+    // (& var): en goalc vive siempre en un hueco de la pila y se lee/escribe ahí. En C es una
+    // variable local cuya dirección escapa (ver finish), así que el compilador la mantiene en
+    // memoria y la relee tras cualquier escritura a través de un puntero o llamada.
+    m_addr_taken.insert(id);
+  }
   auto t = ctype(rv);
   auto it = m_vars.find(id);
   if (it == m_vars.end()) {
@@ -185,6 +222,42 @@ std::string CFunctionWriter::static_addr(const StaticObject* obj) {
                      escape_c_comment(obj->print()));
 }
 
+std::string CFunctionWriter::function_addr(const FunctionEnv* fe) {
+  auto it = m_file->func_addr_idx.find(fe);
+  int idx;
+  if (it == m_file->func_addr_idx.end()) {
+    idx = (int)m_file->func_addr_idx.size();
+    m_file->func_addr_idx[fe] = idx;
+  } else {
+    idx = it->second;
+  }
+  // como un estático: el runtime da su dirección en el objeto cargado (en la Vita el cargador
+  // deja ahí el puntero C nativo; en el modo mixto es el código x86, parcheado si se traduce)
+  return fmt::format("(g2c_gpr)g2c_fn[{}]", idx);
+}
+
+bool CFunctionWriter::writes_pp() const {
+  for (auto& [ir, text] : m_body) {
+    (void)ir;
+    if (text.rfind("G2C_PP = ", 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CFunctionWriter::has_q_signature() const {
+  if (ret_is_q) {
+    return true;
+  }
+  for (bool q : param_is_q) {
+    if (q) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string CFunctionWriter::stack_addr(int slot) {
   m_uses_stack = true;
   // goalc x86: rsp + 8 * slot - r15. Aquí el área de pila es un array local alineado a 16 (como
@@ -234,19 +307,28 @@ void CFunctionWriter::reg_set(const RegVal* dest, const RegVal* src) {
 }
 
 std::string CFunctionWriter::finish(const std::string& c_name) {
+  // Firma: los parámetros y el retorno de 128 bits (en goalc x86 van en xmm1..xmm8 y xmm0)
+  // son g2c_q por valor; el resto, g2c_gpr. Un float como parámetro viaja en un GPR (como en
+  // GOAL), así que un registro FLOAT como parámetro no debería aparecer.
+  param_is_q.clear();
   for (auto* p : params) {
-    if (!is_gpr(p)) {
-      unsupported("parámetro de 128 bits (ABI xmm, todavía no soportada)");
+    if (is_q(p)) {
+      param_is_q.push_back(true);
+    } else if (is_gpr(p)) {
+      param_is_q.push_back(false);
+    } else {
+      unsupported("parámetro que no es GPR ni de 128 bits");
     }
   }
-  if (return_reg && !is_gpr(return_reg)) {
-    unsupported("retorno de 128 bits (ABI xmm, todavía no soportada)");
+  ret_is_q = return_reg && is_q(return_reg);
+  if (return_reg && !ret_is_q && !is_gpr(return_reg)) {
+    unsupported("retorno que no es GPR ni de 128 bits");
   }
   std::string out;
   // static: cada fichero solo exporta su tabla de funciones y su función de enlace
-  out += fmt::format("static g2c_gpr {}(", c_name);
+  out += fmt::format("static {} {}(", ret_is_q ? "g2c_q" : "g2c_gpr", c_name);
   for (size_t i = 0; i < params.size(); i++) {
-    out += fmt::format("{}g2c_gpr a{}", i ? ", " : "", i);
+    out += fmt::format("{}{} a{}", i ? ", " : "", param_is_q[i] ? "g2c_q" : "g2c_gpr", i);
   }
   if (params.empty()) {
     out += "void";
@@ -264,6 +346,11 @@ std::string CFunctionWriter::finish(const std::string& c_name) {
   // declaraciones (todas al principio: los goto no pueden saltarse inicializaciones)
   for (auto& [id, t] : m_vars) {
     out += fmt::format("  {} {}{} = {};\n", t, var_prefix(t), id, t == "g2c_q" ? "{{0}}" : "0");
+  }
+  for (int id : m_addr_taken) {
+    // la dirección escapa: vive en memoria toda la función (ver var())
+    out += fmt::format("  __asm__ volatile(\"\" : : \"r\"(&{}{}) : \"memory\");\n",
+                       var_prefix(m_vars.at(id)), id);
   }
   for (size_t i = 0; i < params.size(); i++) {
     out += fmt::format("  {} = a{};\n", var(params[i]), i);
@@ -321,21 +408,61 @@ std::string function_goal_name(FunctionEnv* fe) {
   return fe->name();
 }
 
-std::string translate_function(FunctionEnv* fe,
-                               const std::string& c_name,
-                               CFunctionWriter::FileState* file,
-                               int* nargs) {
+struct TranslatedFunction {
+  std::string text;
+  int nargs = 0;
+  std::vector<bool> param_is_q;
+  bool ret_is_q = false;
+  bool has_q = false;
+  bool writes_pp = false;
+};
+
+TranslatedFunction translate_function(FunctionEnv* fe,
+                                      const std::string& c_name,
+                                      CFunctionWriter::FileState* file) {
   if (fe->is_asm_func) {
     unsupported("asm-func");
   }
   CFunctionWriter w(fe, file);
+  w.check_constraints();
   auto& code = fe->code();
   for (size_t i = 0; i < code.size(); i++) {
     w.begin_ir((int)i);
     code[i]->do_codegen_c(w);
   }
-  *nargs = (int)w.params.size();
-  return w.finish(c_name);
+  TranslatedFunction r;
+  r.text = w.finish(c_name);
+  r.nargs = (int)w.params.size();
+  r.param_is_q = w.param_is_q;
+  r.ret_is_q = w.ret_is_q;
+  r.has_q = w.has_q_signature();
+  r.writes_pp = w.writes_pp();
+  return r;
+}
+
+/*!
+ * Envoltorio con firma uniforme para las funciones con argumentos o retorno de 128 bits, para
+ * el runtime de PC (x86 -> C): recibe los 8 GPR y los 8 xmm de argumentos de GOAL en arrays
+ * y deja el retorno de 128 bits en *qr. En la Vita no se usa (la llamada es directa).
+ */
+std::string q_wrapper(const std::string& c_name, const TranslatedFunction& tf) {
+  std::string call = c_name + "(";
+  int gi = 0, qi = 0;
+  for (size_t i = 0; i < tf.param_is_q.size(); i++) {
+    call += i ? ", " : "";
+    call += tf.param_is_q[i] ? fmt::format("q[{}]", qi++) : fmt::format("(g2c_gpr)g[{}]", gi++);
+  }
+  call += ")";
+  std::string out = fmt::format(
+      "static g2c_gpr {}__q(const uint64_t* g, const g2c_q* q, g2c_q* qr) {{\n"
+      "  (void)g;\n  (void)q;\n  (void)qr;\n",
+      c_name);
+  if (tf.ret_is_q) {
+    out += fmt::format("  *qr = {};\n  return 0;\n}}\n\n", call);
+  } else {
+    out += fmt::format("  return {};\n}}\n\n", call);
+  }
+  return out;
 }
 
 }  // namespace
@@ -343,6 +470,7 @@ std::string translate_function(FunctionEnv* fe,
 FileResult emit_file(FileEnv* env,
                      const std::string& obj_name,
                      const StaticLocations& statics,
+                     const FunctionLocations& func_locs,
                      const std::vector<u8>& object_data) {
   FileResult result;
   CFunctionWriter::FileState state;
@@ -353,6 +481,9 @@ FileResult emit_file(FileEnv* env,
   struct TableEntry {
     std::string goal_name, c_name;
     int nargs;
+    bool has_q;
+    bool writes_pp;
+    FunctionLocation loc;
   };
   std::vector<TableEntry> table;
   std::set<std::string> used_c_names;
@@ -372,11 +503,13 @@ FileResult emit_file(FileEnv* env,
 
     auto state_backup = state;
     try {
-      int nargs = 0;
-      auto text = translate_function(fe, c_name, &state, &nargs);
+      auto tf = translate_function(fe, c_name, &state);
+      int nargs = tf.nargs;
       functions += fmt::format("/* {} */\n", escape_c_comment(goal_name));
-      functions += text + "\n";
-      if (nargs > 6) {
+      functions += tf.text + "\n";
+      if (tf.has_q) {
+        functions += q_wrapper(c_name, tf);
+      } else if (nargs > 6) {
         // desde x86 solo hay trampolín directo para 6 argumentos; con más, el runtime de PC
         // pasa los 8 registros GOAL en un array
         functions += fmt::format("static g2c_gpr {}__arr(const uint64_t* a) {{\n  return {}(",
@@ -386,7 +519,12 @@ FileResult emit_file(FileEnv* env,
         }
         functions += ");\n}\n\n";
       }
-      table.push_back({goal_name, c_name, nargs});
+      FunctionLocation loc;
+      auto lit = func_locs.find(fe);
+      if (lit != func_locs.end()) {
+        loc = lit->second;
+      }
+      table.push_back({goal_name, c_name, nargs, tf.has_q, tf.writes_pp, loc});
       result.translated.push_back(goal_name);
     } catch (Unsupported& e) {
       state = state_backup;
@@ -425,6 +563,9 @@ FileResult emit_file(FileEnv* env,
   // estáticos: índice = posición en FileEnv::statics()
   out +=
       fmt::format("static uint32_t g2c_static[{}];\n", std::max<size_t>(1, env->statics().size()));
+  // objetos función del fichero cuya dirección se usa (lambdas): índice -> dirección GOAL
+  out +=
+      fmt::format("static uint32_t g2c_fn[{}];\n", std::max<size_t>(1, state.func_addr_idx.size()));
   out += fmt::format("void {}_link(void) {{\n", file_c);
   for (size_t i = 0; i < sym_names.size(); i++) {
     out += fmt::format("  g2c_sym[{}] = g2c_rt_symbol(\"{}\");\n", i, sym_names[i]);
@@ -439,14 +580,27 @@ FileResult emit_file(FileEnv* env,
     out += fmt::format("  g2c_static[{}] = g2c_rt_static(\"{}\", {}, {});\n", i, obj_name,
                        it->second.first, it->second.second);
   }
+  for (auto& [fe, idx] : state.func_addr_idx) {
+    auto it = func_locs.find(fe);
+    if (it == func_locs.end() || it->second.offset < 0) {
+      throw std::runtime_error(fmt::format(
+          "goal2c: no se conoce la ubicación de la función {} de {}", fe->name(), obj_name));
+    }
+    out += fmt::format("  g2c_fn[{}] = g2c_rt_static(\"{}\", {}, {}); /* {} */\n", idx, obj_name,
+                       it->second.seg, it->second.offset, escape_c_comment(fe->name()));
+  }
   out += "}\n\n";
   out += functions;
   out += fmt::format("const g2c_func_entry {}_funcs[] = {{\n", file_c);
   for (auto& e : table) {
-    out += fmt::format("  {{\"{}\", (void*){}, {}, {}}},\n", e.goal_name, e.c_name, e.nargs,
-                       e.nargs > 6 ? "(void*)" + e.c_name + "__arr" : std::string("0"));
+    // {nombre, fn, nargs, fn_arr, fn_q, flags, seg, offset, length}
+    out += fmt::format(
+        "  {{\"{}\", (void*){}, {}, {}, {}, {}, {}, {}, {}}},\n", e.goal_name, e.c_name, e.nargs,
+        (!e.has_q && e.nargs > 6) ? "(void*)" + e.c_name + "__arr" : std::string("0"),
+        e.has_q ? "(void*)" + e.c_name + "__q" : std::string("0"),
+        e.writes_pp ? "G2C_FN_WRITES_PP" : "0", e.loc.seg, e.loc.offset, e.loc.length);
   }
-  out += "  {0, 0, 0, 0}\n};\n\n";
+  out += "  {0, 0, 0, 0, 0, 0, 0, 0, 0}\n};\n\n";
   out +=
       fmt::format("const g2c_file_info {}_info = {{\"{}\", {}_link, {}_funcs, {{{}, {}, {}}}}};\n",
                   file_c, obj_name, file_c, file_c, seg_sizes[0], seg_sizes[1], seg_sizes[2]);
@@ -472,7 +626,7 @@ void IR_ValueReset::do_codegen_c(CFunctionWriter& w) {
   if (w.current_ir == 0) {
     for (auto* rv : m_args) {
       // self de los behaviors va en la lista pero no es un argumento: llega en r13 (pp)
-      if (rv->rlet_constraint().has_value() && *rv->rlet_constraint() == emitter::R13) {
+      if (w.is_pp(rv)) {
         continue;
       }
       w.params.push_back(rv);
@@ -823,20 +977,92 @@ void IR_FunctionCall::do_codegen_c(CFunctionWriter& w) {
   // Vita lee el puntero C nativo del objeto función (G2C_NATIVE_FN) y llama con la aridad
   // del llamante, como en GOAL (los argumentos sobrantes se ignoran; con AAPCS y SysV el
   // llamante limpia la pila). En el modo mixto de PC pasa por el runtime.
-  if (!w.is_gpr(m_func) || !w.is_gpr(m_ret)) {
-    unsupported("llamada con función o retorno no GPR (128 bits)");
+  if (!w.is_gpr(m_func)) {
+    unsupported("llamada con la función en un registro no GPR");
   }
   if (m_args.size() > 8) {
     unsupported("llamada con más de 8 argumentos");
   }
-  std::string args = w.var(m_func);
+  bool any_q = w.is_q(m_ret);
   for (auto* a : m_args) {
-    if (!w.is_gpr(a)) {
-      unsupported("llamada con argumento de 128 bits");
+    if (w.is_q(a)) {
+      any_q = true;
+    } else if (!w.is_gpr(a)) {
+      unsupported("llamada con argumento que no es GPR ni de 128 bits");
     }
-    args += ", " + w.var(a);
   }
-  w.line(fmt::format("{} = G2C_CALL{}({});", w.var(m_ret), m_args.size(), args));
+  if (!any_q) {
+    if (!w.is_gpr(m_ret)) {
+      unsupported("llamada con retorno que no es GPR ni de 128 bits");
+    }
+    std::string args = w.var(m_func);
+    for (auto* a : m_args) {
+      args += ", " + w.var(a);
+    }
+    w.line(fmt::format("{} = G2C_CALL{}({});", w.var(m_ret), m_args.size(), args));
+    return;
+  }
+
+  // Con argumentos o retorno de 128 bits (goalc x86: xmm1..xmm8 por orden de aparición entre
+  // los de 128 bits, retorno en xmm0). En la Vita: llamada directa con la firma exacta, como
+  // la que tiene la función C llamada (los g2c_q van por valor). En el modo mixto: el runtime
+  // carga los xmm (g2c_host_call_q).
+  bool ret_q = w.is_q(m_ret);
+  if (!ret_q && !w.is_gpr(m_ret)) {
+    unsupported("llamada con retorno que no es GPR ni de 128 bits");
+  }
+  std::string sig, args, gprs, qs;
+  for (size_t i = 0; i < m_args.size(); i++) {
+    auto* a = m_args[i];
+    bool q = w.is_q(a);
+    sig += fmt::format("{}{}", i ? ", " : "", q ? "g2c_q" : "g2c_gpr");
+    args += fmt::format("{}{}", i ? ", " : "", w.var(a));
+    auto& list = q ? qs : gprs;
+    list += fmt::format("{}{}", list.empty() ? "" : ", ", w.var(a));
+  }
+  if (sig.empty()) {
+    sig = "void";
+  }
+  if (gprs.empty()) {
+    gprs = "0";
+  }
+  // sin argumentos de 128 bits: puntero nulo (el runtime pone los xmm a cero)
+  std::string qarr = qs.empty() ? "0" : fmt::format("(const g2c_q[8]){{{}}}", qs);
+  auto ret = w.var(m_ret);
+  w.line("#ifdef G2C_PC_MIXED");
+  if (ret_q) {
+    w.line(fmt::format(
+        "{{ g2c_q g2c_qr; (void)g2c_host_call_q((uint32_t){}, (const uint64_t[8]){{{}}}, {}, "
+        "&g2c_qr); {} = g2c_qr; }}",
+        w.var(m_func), gprs, qarr, ret));
+  } else {
+    w.line(fmt::format(
+        "{{ g2c_q g2c_qr; {} = (g2c_gpr)g2c_host_call_q((uint32_t){}, (const uint64_t[8]){{{}}}, "
+        "{}, &g2c_qr); }}",
+        ret, w.var(m_func), gprs, qarr));
+  }
+  w.line("#else");
+  w.line(fmt::format("{} = (({}(*)({}))G2C_NATIVE_FN({}))({});", ret, ret_q ? "g2c_q" : "g2c_gpr",
+                     sig, w.var(m_func), args));
+  w.line("#endif");
+}
+
+void IR_FunctionAddr::do_codegen_c(CFunctionWriter& w) {
+  // goalc x86: lea rip-relativo al objeto función (otra función del mismo fichero) - r15
+  if (!w.is_gpr(m_dest)) {
+    unsupported("dirección de función a registro no GPR");
+  }
+  w.line(fmt::format("{} = {};", w.var(m_dest), w.function_addr(m_src)));
+}
+
+void IR_RegValAddr::do_codegen_c(CFunctionWriter& w) {
+  // goalc x86: lea dst, [rsp + hueco de la variable]; sub dst, r15. Aquí la variable es una
+  // local de C con la dirección expuesta (ver CFunctionWriter::var).
+  if (!w.is_gpr(m_dest)) {
+    unsupported("dirección de variable a registro no GPR");
+  }
+  auto src = w.var(m_src);
+  w.line(fmt::format("{} = (g2c_gpr)((uintptr_t)&{} - (uintptr_t)g2c_mem);", w.var(m_dest), src));
 }
 
 ///////////////////////////

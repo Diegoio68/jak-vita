@@ -23,6 +23,7 @@ class FunctionEnv;
 class RegVal;
 class StaticObject;
 struct Label;
+struct IRegConstraint;
 
 namespace goal2c {
 
@@ -37,6 +38,7 @@ class CFunctionWriter {
     std::map<std::string, int> symbols;             // nombre -> índice en g2c_sym
     std::map<const StaticObject*, int> static_idx;  // objeto estático -> índice en el fichero
     std::set<int> used_statics;                     // estáticos referenciados por el C
+    std::map<const FunctionEnv*, int> func_addr_idx;  // función (mov-fa) -> índice en g2c_fn
   };
 
   CFunctionWriter(const FunctionEnv* env, FileState* file);
@@ -46,6 +48,8 @@ class CFunctionWriter {
   //! Tipo C de un registro virtual ("g2c_gpr" o "float"); lanza si no está soportado.
   std::string ctype(const RegVal* rv) const;
   bool is_gpr(const RegVal* rv) const;
+  //! ¿Es la variable el registro pp (r13: proceso actual, self de los behaviors)?
+  bool is_pp(const RegVal* rv) const;
   bool is_float(const RegVal* rv) const;
   //! Registro de 128 bits (VECTOR_FLOAT o INT_128): tipo g2c_q.
   bool is_q(const RegVal* rv) const;
@@ -56,6 +60,12 @@ class CFunctionWriter {
   std::string symbol(const std::string& name);
   //! Dirección GOAL de un objeto estático del fichero (string, estructura...).
   std::string static_addr(const StaticObject* obj);
+  //! Dirección GOAL del objeto función de una función del fichero (lambdas: mov-fa).
+  std::string function_addr(const FunctionEnv* fe);
+  //! ¿La función escribe pp (suspend, with-proc...)? Ver finish().
+  bool writes_pp() const;
+  //! Lanza si hay restricciones a registros especiales que el C no sabe representar.
+  void check_constraints() const;
   //! Empieza la traducción de la instrucción IR ir_idx.
   void begin_ir(int ir_idx);
   //! Añade una línea de C al cuerpo.
@@ -75,10 +85,20 @@ class CFunctionWriter {
   //! Genera el texto completo de la función.
   std::string finish(const std::string& c_name);
 
+  //! Firma (tras finish): qué parámetros son de 128 bits y si el retorno lo es.
+  std::vector<bool> param_is_q;
+  bool ret_is_q = false;
+  bool has_q_signature() const;
+
  private:
   const FunctionEnv* m_env;
   FileState* m_file;
   std::map<int, std::string> m_vars;  // ireg id -> tipo C
+  std::set<int> m_addr_taken;         // variables cuya dirección se toma (forced on stack)
+  // ireg id -> restricción "en toda la función" (rlet :reg y self de los behaviors). Un rlet que
+  // reutiliza un registro ya restringido (p. ej. pp en un behavior, o el segundo with-pp de una
+  // función) crea una RegVal nueva SIN rlet_constraint: la restricción solo está aquí.
+  std::map<int, const IRegConstraint*> m_everywhere;
   std::set<int> m_label_targets;
   bool m_uses_stack = false;
   // cuerpo: (índice IR, texto)
@@ -88,6 +108,14 @@ class CFunctionWriter {
 //! Objeto estático -> (segmento, posición dentro del segmento) en el objeto generado.
 using StaticLocations = std::map<const StaticObject*, std::pair<int, int>>;
 
+//! Objeto función en el objeto generado: segmento, posición (primera instrucción) y longitud.
+struct FunctionLocation {
+  int seg = -1;
+  int offset = -1;
+  int length = 0;
+};
+using FunctionLocations = std::map<const FunctionEnv*, FunctionLocation>;
+
 struct FileResult {
   std::string c_source;
   std::vector<std::string> translated;  // funciones traducidas
@@ -96,10 +124,12 @@ struct FileResult {
 
 //! Traduce todas las funciones (no top-level) de un FileEnv a un fichero C.
 //! statics: ubicación de cada estático en el objeto generado por goalc para este fichero.
+//! functions: ubicación de cada función en ese objeto (lambdas y parcheo en el modo mixto).
 //! object_data: ese objeto (se usa para guardar los tamaños de segmento como huella).
 FileResult emit_file(FileEnv* env,
                      const std::string& obj_name,
                      const StaticLocations& statics,
+                     const FunctionLocations& functions,
                      const std::vector<u8>& object_data);
 
 //! Convierte un nombre GOAL en un identificador C válido.

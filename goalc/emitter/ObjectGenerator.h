@@ -82,6 +82,9 @@ class ObjectGenerator {
   int get_static_location(const StaticRecord& rec) const {
     return m_static_data_by_seg.at(rec.seg).at(rec.static_id).location;
   }
+  // goal2c (Jak Vita): segmento, posición del objeto función (su primera instrucción) dentro
+  // del segmento y longitud del código, tras generar
+  void get_function_location(int f_idx, int* seg, int* offset, int* length) const;
   void link_instruction_jump(InstructionRecord jump_instr, IR_Record destination);
   void link_static_type_ptr(StaticRecord rec, int offset, const std::string& type_name);
 

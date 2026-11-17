@@ -1,0 +1,85 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/math/transformq.gc (y los dos métodos de transformq-h.gc),
+;; goalc x86 frente a goal2c. Usa las macros de cases_prelude.gc. Comparación bit a bit.
+;;
+;; seek-toward-heading-vec! usa el reloj del juego solo para decidir si cambia de sentido;
+;; aquí el primer paso parte de old-y-angle-diff = 0 y los siguientes van en el mismo sentido,
+;; así que el resultado no depende del reloj. (seconds-per-frame) se imprime: los dos runtimes
+;; deben tener el mismo.
+
+(define *g2c-tq* (new 'global 'trsqv))
+(define *g2c-tq2* (new 'global 'transformq))
+(define *g2c-tq-v* (new 'global 'vector))
+(define *g2c-tq-q* (new 'global 'quaternion))
+(define *g2c-tq-m* (new 'global 'matrix))
+
+(defun g2c-tq-reset ()
+  "trsqv en una posición y orientación conocidas"
+  (let ((tq *g2c-tq*))
+    (g2c-set! (-> tq trans) 1.0 2.0 3.0 1.0)
+    (quaternion-axis-angle! (-> tq quat) 0.0 1.0 0.0 8192.0)
+    (g2c-set! (-> tq scale) 1.0 1.0 1.0 1.0)
+    (set! (-> tq old-y-angle-diff) 0.0)
+    (g2c-set! (-> tq dir-targ) 0.0 0.0 0.0 1.0)
+    tq))
+
+(defun g2c-transformq-cases ()
+  (g2c-pf "seconds-per-frame" (seconds-per-frame))
+  (let ((tq (g2c-tq-reset)))
+    ;; acceso a la orientación
+    (g2c-pv "get-quaternion" (get-quaternion tq))
+    (g2c-pf "y-angle" (y-angle tq))
+    (rot->dir-targ! tq)
+    (g2c-pv "rot->dir-targ" (-> tq dir-targ))
+    (set-quaternion! tq (quaternion-axis-angle! *g2c-tq-q* 1.0 0.0 0.0 4096.0))
+    (g2c-pv "set-quaternion" (-> tq quat))
+    ;; ángulos hacia un punto (transformq-h)
+    (g2c-tq-reset)
+    (g2c-pf "global-y-angle" (global-y-angle-to-point tq (g2c-set! *g2c-tq-v* 5.0 0.0 -2.0 1.0)))
+    (g2c-pf "relative-y-angle" (relative-y-angle-to-point tq *g2c-tq-v*))
+    ;; orientar al instante
+    (g2c-pv "set-heading-vec" (set-heading-vec! tq (g2c-set! *g2c-tq-v* 1.0 0.5 1.0 0.0)))
+    (g2c-tq-reset)
+    (g2c-pv "point-toward-point" (point-toward-point! tq (g2c-set! *g2c-tq-v* -4.0 2.0 7.0 1.0)))
+    (g2c-tq-reset)
+    (g2c-pv "set-yaw-clear" (set-yaw-angle-clear-roll-pitch! tq 12000.0))
+    (g2c-tq-reset)
+    (g2c-pv "heading-clear" (set-heading-vec-clear-roll-pitch! tq (g2c-set! *g2c-tq-v* 0.3 0.8 -1.0 0.0)))
+    (g2c-tq-reset)
+    (g2c-pv "point-clear" (point-toward-point-clear-roll-pitch! tq (g2c-set! *g2c-tq-v* 8.0 -1.0 3.5 1.0)))
+    ;; giro hacia la gravedad
+    (quaternion-axis-angle! (-> tq quat) 0.0 0.0 1.0 3000.0)
+    (g2c-pf "roll-relative" (roll-relative-to-gravity tq))
+    (g2c-pv "set-roll-to-grav" (set-roll-to-grav! tq 1000.0))
+    (g2c-pv "set-roll-to-grav-2" (set-roll-to-grav-2! tq -500.0))
+    (g2c-pf "roll-relative-2" (roll-relative-to-gravity tq))
+    ;; seguimiento progresivo (mismo sentido en cada paso)
+    (g2c-tq-reset)
+    (dotimes (i 3)
+      (g2c-pv "seek-heading" (seek-toward-heading-vec! tq (g2c-set! *g2c-tq-v* -1.0 0.0 0.2 0.0) 65536.0 (seconds 0.5)))
+      (g2c-pf "seek-heading-diff" (-> tq old-y-angle-diff)))
+    (g2c-tq-reset)
+    (dotimes (i 2)
+      (g2c-pv "seek-point" (seek-to-point-toward-point! tq (g2c-set! *g2c-tq-v* 10.0 0.0 -3.0 1.0) 30000.0 (seconds 0.2))))
+    (g2c-tq-reset)
+    (dotimes (i 2)
+      (g2c-pv "seek-yaw" (seek-toward-yaw-angle! tq 20000.0 40000.0 (seconds 1))))
+    (g2c-tq-reset)
+    (dotimes (i 2)
+      (g2c-pv "rotate-toward" (rotate-toward-orientation! tq (quaternion-axis-angle! *g2c-tq-q* 0.6 0.8 0.0 9000.0) 30000.0 20000.0)))
+    ;; transformq -> matriz
+    (g2c-tq-reset)
+    (g2c-set! (-> tq scale) 2.0 0.5 1.5 1.0)
+    (transformq-copy! *g2c-tq2* (the-as transformq (-> tq trans)))  ;; transformq en línea dentro del basic
+    (g2c-pv "copy-trans" (-> *g2c-tq2* trans))
+    (g2c-pv "copy-quat" (-> *g2c-tq2* quat))
+    (g2c-pv "copy-scale" (-> *g2c-tq2* scale))
+    (g2c-pm "matrix<-transformq" (matrix<-transformq! *g2c-tq-m* *g2c-tq2*))
+    (g2c-pm "matrix<-no-trans" (matrix<-no-trans-transformq! *g2c-tq-m* *g2c-tq2*))
+    (g2c-pm "matrix<-trans" (matrix<-transformq+trans! *g2c-tq-m* *g2c-tq2* (g2c-set! *g2c-tq-v* 0.5 -0.5 2.0 1.0)))
+    (g2c-pm "matrix<-world-trans" (matrix<-transformq+world-trans! *g2c-tq-m* *g2c-tq2* (g2c-set! *g2c-tq-v* -3.0 1.0 4.0 1.0)))
+    ;; matrix<-parented-transformq! no se prueba: el juego no la usa y multiplica por un vector de
+    ;; pila sin inicializar en w (resultado no determinista, distinto en cada runtime)
+    ))
+
+(g2c-transformq-cases)

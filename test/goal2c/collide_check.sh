@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# goal2c (Jak Vita): comprobación de colisiones con el juego real.
+# goal2c (Jak Vita): comprobación de colisiones y cámara con el juego real.
 #
 # Arranca el juego sin ventana dos veces (todo en x86, y en modo mixto con la librería de
 # goal2c), espera COLLIDE_SECS segundos y pide por el listener la posición de Jak
 # ((-> *target* control trans), en bits). Jak en reposo sobre el suelo debe quedar en el MISMO
-# sitio con x86 y con C: si las colisiones fallaran en C, caería o se movería.
+# sitio con x86 y con C: si las colisiones fallaran en C, caería o se movería. Lo mismo con la
+# cámara (posición, fov y matriz de rotación del combinador de cámaras), que sigue a Jak.
 #
 # Uso: test/goal2c/collide_check.sh [librería.so]
 set -uo pipefail
@@ -19,7 +20,9 @@ mkdir -p "$OUT"
 # (mi) carga los tipos del proyecto (ya compilado: segundos), (lt) conecta con el juego y la
 # consulta se compila y se envía ya conectada. (Con goalc -c no sirve: compila todo de una vez,
 # antes de conectar, y sale sin esperar la respuesta.)
-QUERY='(format #t "JAK ~X ~X ~X ~X~%" (the-as int (-> *target* control trans x)) (the-as int (-> *target* control trans y)) (the-as int (-> *target* control trans z)) (the-as int (-> *target* control trans w)))'
+# Posición de Jak (colisión) y cámara: posición del combinador de cámaras y su matriz de rotación
+# (engine/camera: estados de cámara, seguimiento de Jak, parámetros leídos con res-lump).
+QUERY='(begin (format #t "JAK ~X ~X ~X ~X~%" (the-as int (-> *target* control trans x)) (the-as int (-> *target* control trans y)) (the-as int (-> *target* control trans z)) (the-as int (-> *target* control trans w))) (format #t "CAM ~X ~X ~X ~X~%" (the-as int (-> *camera-combiner* trans x)) (the-as int (-> *camera-combiner* trans y)) (the-as int (-> *camera-combiner* trans z)) (the-as int (-> *camera-combiner* fov))) (dotimes (i 3) (format #t "ROT~D ~X ~X ~X~%" i (the-as int (-> *camera-combiner* inv-camera-rot vector i x)) (the-as int (-> *camera-combiner* inv-camera-rot vector i y)) (the-as int (-> *camera-combiner* inv-camera-rot vector i z)))))'
 
 measure() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
   local tag="$1" lib="$2"
@@ -35,18 +38,28 @@ measure() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
     echo "SIGSEGV"
     return
   fi
-  # solo vale una respuesta completa: JAK y cuatro valores hexadecimales
+  # solo vale una respuesta completa: JAK, CAM y las tres filas ROT, cada una con sus valores
   sed 's/\x1b\[[0-9;]*m//g' "$OUT/collide_${tag}_query.log" |
-    grep -oE "JAK [0-9a-fA-F]+ [0-9a-fA-F]+ [0-9a-fA-F]+ [0-9a-fA-F]+" | tail -1
+    grep -oE "(JAK|CAM) [0-9a-fA-F]+ [0-9a-fA-F]+ [0-9a-fA-F]+ [0-9a-fA-F]+|ROT[0-2] [0-9a-fA-F]+ [0-9a-fA-F]+ [0-9a-fA-F]+" |
+    tail -5 | paste -sd'|'
 }
 
+# CHECK_X86_TWICE=1: compara dos ejecuciones todo x86 (comprueba que la medida es determinista)
 x86="$(measure x86 "")"
-c="$(measure c "$LIB")"
-echo "posición de Jak, todo x86:      ${x86:-(sin respuesta)}"
-echo "posición de Jak, con goal2c:    ${c:-(sin respuesta)}"
-if [[ "$x86" =~ ^JAK\ [0-9a-fA-F]+\ [0-9a-fA-F]+\ [0-9a-fA-F]+\ [0-9a-fA-F]+$ && "$x86" == "$c" ]]; then
+if [[ "${CHECK_X86_TWICE:-0}" == 1 ]]; then
+  c="$(measure c "")"
+  label="todo x86 (2.ª vez)"
+else
+  c="$(measure c "$LIB")"
+  label="con goal2c"
+fi
+echo "todo x86:"
+tr '|' '\n' <<<"${x86:-(sin respuesta)}" | sed 's/^/  /'
+echo "$label:"
+tr '|' '\n' <<<"${c:-(sin respuesta)}" | sed 's/^/  /'
+if [[ "$x86" =~ ^JAK\ .*\|CAM\ .*\|ROT0\ .*\|ROT1\ .*\|ROT2\  && "$x86" == "$c" ]]; then
   echo "OK"
   exit 0
 fi
-echo "FALLO: la posición difiere o no hubo respuesta (logs en $OUT/collide_*.log)"
+echo "FALLO: Jak o la cámara difieren, o no hubo respuesta (logs en $OUT/collide_*.log)"
 exit 1

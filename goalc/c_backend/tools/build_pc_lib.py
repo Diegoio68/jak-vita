@@ -35,6 +35,9 @@ uint32_t g2c_rt_static(const char* obj_name, int seg, int offset) {
 uint64_t g2c_host_call(uint32_t fn, int nargs, const uint64_t* args) {
   return g_host.call(fn, nargs, args);
 }
+uint64_t g2c_host_call_q(uint32_t fn, const uint64_t* g8, const g2c_q* q8, g2c_q* qret) {
+  return g_host.call_q(fn, g8, q8, qret);
+}
 
 """
 

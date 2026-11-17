@@ -356,7 +356,17 @@ void Compiler::goal2c_object_file(FileEnv* env,
   for (auto& st : env->statics()) {
     locs[st.get()] = {st->rec.seg, gen.object_generator().get_static_location(st->rec)};
   }
-  auto res = goal2c::emit_file(env, obj_name, locs, data);
+  goal2c::FunctionLocations flocs;
+  for (auto& fe : env->functions()) {
+    if (fe->idx_in_file < 0) {
+      continue;
+    }
+    goal2c::FunctionLocation loc;
+    gen.object_generator().get_function_location(fe->idx_in_file, &loc.seg, &loc.offset,
+                                                 &loc.length);
+    flocs[fe.get()] = loc;
+  }
+  auto res = goal2c::emit_file(env, obj_name, locs, flocs, data);
   env->cleanup_after_codegen();
 
   file_util::create_dir_if_needed_for_file(c_path);

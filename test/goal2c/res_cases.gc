@@ -1,0 +1,141 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de engine/entity/res.gc (goalc x86 frente a goal2c).
+;; Usa las macros de cases_prelude.gc (el test lo antepone). Comparación bit a bit.
+;;
+;; res-tag es un uint128: get-property-value recibe y devuelve 128 bits, add-data! y
+;; allocate-data-memory-for-tag! reciben un res-tag, print/length de res-tag lo reciben como
+;; objeto. Así se prueba la ABI de 128 bits (xmm1..xmm8 / xmm0 en goalc x86) en las dos
+;; direcciones: estos casos (x86) llaman a las funciones en C y el C se llama entre sí.
+;; add-32bit-data! toma la dirección de su argumento ((& arg1)): variable con la dirección
+;; tomada en C.
+;;
+;; No se imprimen direcciones (punteros a datos, símbolos): solo contenidos, índices y
+;; desplazamientos relativos. Los nombres tienen al menos 8 letras: sort! y lookup-tag-idx
+;; comparan los 8 primeros caracteres como un entero de 64 bits.
+
+;; En OpenGOAL res-lump.tag es un puntero (los lumps de verdad vienen del nivel cargado) y
+;; new res-lump no lo inicializa: data-base saldría de un puntero nulo. Se le dan aquí una tabla
+;; de tags y una zona de datos propias (alineadas a 16).
+(define *g2c-lump* (new 'global 'res-lump 12 1024))
+(define *g2c-lump-tags* (new 'global 'inline-array 'vector 12))
+(define *g2c-lump-data* (new 'global 'inline-array 'vector 64))
+(set! (-> *g2c-lump* tag) (the-as (pointer res-tag) *g2c-lump-tags*))
+(set! (-> *g2c-lump* data-base) (the-as pointer *g2c-lump-data*))
+(set! (-> *g2c-lump* data-top) (the-as pointer *g2c-lump-data*))
+(define *g2c-qv* (new 'global 'vector))
+(define *g2c-buf* (new 'global 'inline-array 'vector 4))
+(define *g2c-vsrc* (new 'global 'inline-array 'vector 4))
+
+(defun g2c-tag ((name symbol) (kf float) (ty type) (count int) (inl int))
+  "un res-tag con los campos dados (data-offset a 0)"
+  (let ((tag (new 'static 'res-tag)))
+    (set! (-> tag name) name)
+    (set! (-> tag key-frame) kf)
+    (set! (-> tag elt-type) ty)
+    (set! (-> tag elt-count) count)
+    (set! (-> tag inlined?) inl)
+    tag))
+
+(defun g2c-ptag ((label string) (tag res-tag))
+  "imprime los campos de un res-tag que no son direcciones"
+  (format #t "~A ~A ~X ~A " label (-> tag name) (g2c-bits (-> tag key-frame)) (-> tag elt-type symbol))
+  (format #t "~D ~D ~D~%" (-> tag data-offset) (-> tag elt-count) (-> tag inlined?)))
+
+(defun g2c-plump ((label string))
+  "imprime la tabla de tags del lump (orden tras sort!)"
+  (g2c-pi label (length *g2c-lump*))
+  (dotimes (i (length *g2c-lump*))
+    (g2c-ptag "  tag" (-> *g2c-lump* tag i))))
+
+(defun g2c-pq ((label string) (q uint128))
+  "imprime un valor de 128 bits como 4 palabras"
+  (set! (-> *g2c-qv* quad) q)
+  (g2c-pv label *g2c-qv*))
+
+(defun g2c-res-cases ()
+  (let ((lump *g2c-lump*))
+    ;; tamaño y longitud del lump vacío
+    (g2c-pi "lump-length-vacio" (length lump))
+    (g2c-pi "lump-asize" (asize-of lump))
+    ;; búsqueda en un lump vacío: negativo
+    (g2c-pi "lookup-vacio" (the-as int (lookup-tag-idx lump 'g2c-alpha1 'base 0.0)))
+    ;; datos de 32 bits (add-32bit-data!: (& arg1) y res-tag como argumento de 128 bits)
+    (add-32bit-data! lump (g2c-tag 'g2c-alpha1 0.0 int32 1 0) (the-as object -1234))
+    (add-32bit-data! lump (g2c-tag 'g2c-floatv 0.0 float 1 0) (the-as object (g2c-bits 2.5)))
+    (add-32bit-data! lump (g2c-tag 'g2c-uint16 0.0 uint16 1 0) (the-as object #xbeef))
+    (add-32bit-data! lump (g2c-tag 'g2c-int8vl 0.0 int8 1 0) (the-as object -5))
+    (g2c-plump "tras-32bit")
+    ;; fotogramas clave de float para interpolar, añadidos desordenados (sort! los ordena)
+    (add-32bit-data! lump (g2c-tag 'g2c-keyfra 1.0 float 1 0) (the-as object (g2c-bits 20.0)))
+    (add-32bit-data! lump (g2c-tag 'g2c-keyfra 0.0 float 1 0) (the-as object (g2c-bits 10.0)))
+    (add-32bit-data! lump (g2c-tag 'g2c-keyfra 2.0 float 1 0) (the-as object (g2c-bits -4.0)))
+    ;; mismo prefijo de 8 caracteres, nombre distinto
+    (add-32bit-data! lump (g2c-tag 'g2c-samepfxA 0.0 int32 1 0) (the-as object 111))
+    (add-32bit-data! lump (g2c-tag 'g2c-samepfxB 0.0 int32 1 0) (the-as object 222))
+    ;; vectores en línea (add-data! con copia de memoria) y fotogramas para interpolar
+    (g2c-set! (-> *g2c-vsrc* 0) 1.0 2.0 3.0 4.0)
+    (g2c-set! (-> *g2c-vsrc* 1) -1.0 0.5 8.0 16.0)
+    (g2c-set! (-> *g2c-vsrc* 2) 10.0 20.0 30.0 40.0)
+    (g2c-set! (-> *g2c-vsrc* 3) 0.0 -2.0 -8.0 1.0)
+    (add-data! lump (g2c-tag 'g2c-vectors 0.0 vector 2 1) (the-as pointer (-> *g2c-vsrc* 0)))
+    (add-data! lump (g2c-tag 'g2c-vectors 4.0 vector 2 1) (the-as pointer (-> *g2c-vsrc* 2)))
+    (g2c-plump "tras-todo")
+    ;; reutilizar un tag existente (misma clave): se sobrescribe el valor
+    (add-32bit-data! lump (g2c-tag 'g2c-alpha1 0.0 int32 1 0) (the-as object 777))
+    (g2c-pi "lump-length-reuso" (length lump))
+    ;; lookup-tag-idx en sus modos (res-tag-pair: lo en los 32 bits bajos, hi en los altos)
+    (g2c-pi "lookup-base" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'base 0.5)))
+    (g2c-pi "lookup-interp" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'interp 0.5)))
+    (g2c-pi "lookup-interp-exacto" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'interp 1.0)))
+    (g2c-pi "lookup-interp-tras" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'interp 7.0)))
+    (g2c-pi "lookup-exact" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'exact 2.0)))
+    (g2c-pi "lookup-exact-falla" (the-as int (lookup-tag-idx lump 'g2c-keyfra 'exact 1.5)))
+    (g2c-pi "lookup-prefijo-B" (the-as int (lookup-tag-idx lump 'g2c-samepfxB 'exact 0.0)))
+    (g2c-pi "lookup-no-existe" (the-as int (lookup-tag-idx lump 'g2c-missing1 'base 0.0)))
+    ;; get-property-value: argumento y retorno de 128 bits
+    (let ((tag (new 'static 'res-tag)))
+      (g2c-pq "value-int32" (get-property-value lump 'g2c-alpha1 'base 0.0 (the-as uint128 99) (& tag) (the-as pointer #f)))
+      (g2c-ptag "value-int32-tag" tag)
+      (g2c-pq "value-uint16" (get-property-value lump 'g2c-uint16 'base 0.0 (the-as uint128 99) (& tag) (the-as pointer #f)))
+      (g2c-pq "value-int8" (get-property-value lump 'g2c-int8vl 'base 0.0 (the-as uint128 99) (the-as (pointer res-tag) #f) (the-as pointer #f)))
+      (g2c-pq "value-float" (get-property-value lump 'g2c-floatv 'base 0.0 (the-as uint128 99) (the-as (pointer res-tag) #f) (the-as pointer #f)))
+      (g2c-pq "value-default" (get-property-value lump 'g2c-missing1 'base 0.0 (-> *g2c-vsrc* 1 quad) (& tag) (the-as pointer #f)))
+      (g2c-pq "value-vector" (get-property-value lump 'g2c-vectors 'base 0.0 (the-as uint128 5) (the-as (pointer res-tag) #f) (the-as pointer #f)))
+      (g2c-pq "value-prefijo-A" (get-property-value lump 'g2c-samepfxA 'exact 0.0 (the-as uint128 0) (the-as (pointer res-tag) #f) (the-as pointer #f)))
+      (g2c-pq "value-prefijo-B" (get-property-value lump 'g2c-samepfxB 'exact 0.0 (the-as uint128 0) (the-as (pointer res-tag) #f) (the-as pointer #f))))
+    ;; get-property-value-float, con interpolación entre fotogramas
+    (g2c-pf "float-base" (get-property-value-float lump 'g2c-keyfra 'base 0.0 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    (g2c-pf "float-interp" (get-property-value-float lump 'g2c-keyfra 'interp 0.25 -1.0 (the-as (pointer res-tag) #f) (the-as pointer *g2c-buf*)))
+    (g2c-pf "float-interp-2" (get-property-value-float lump 'g2c-keyfra 'interp 1.75 -1.0 (the-as (pointer res-tag) #f) (the-as pointer *g2c-buf*)))
+    (g2c-pf "float-interp-sin-buf" (get-property-value-float lump 'g2c-keyfra 'interp 0.25 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    (g2c-pf "float-de-int32" (get-property-value-float lump 'g2c-alpha1 'base 0.0 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    (g2c-pf "float-de-uint16" (get-property-value-float lump 'g2c-uint16 'base 0.0 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    (g2c-pf "float-de-int8" (get-property-value-float lump 'g2c-int8vl 'base 0.0 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    (g2c-pf "float-default" (get-property-value-float lump 'g2c-missing1 'base 0.0 -1.0 (the-as (pointer res-tag) #f) (the-as pointer #f)))
+    ;; get-property-data / struct: se imprime el contenido, no el puntero
+    (let ((tag (new 'static 'res-tag)))
+      (let ((p (get-property-data lump 'g2c-vectors 'interp 1.0 (the-as pointer #f) (& tag) (the-as pointer *g2c-buf*))))
+        (g2c-pv "data-vector-interp-0" (-> (the-as (inline-array vector) p) 0))
+        (g2c-pv "data-vector-interp-1" (-> (the-as (inline-array vector) p) 1))
+        (g2c-ptag "data-vector-tag" tag))
+      (let ((p (get-property-data lump 'g2c-vectors 'base 1.0 (the-as pointer #f) (& tag) (the-as pointer *g2c-buf*))))
+        (g2c-pv "data-vector-base" (-> (the-as (inline-array vector) p) 1)))
+      (g2c-pb "data-no-existe" (get-property-data lump 'g2c-missing1 'base 0.0 (the-as pointer #f) (& tag) (the-as pointer #f)))
+      (let ((s (get-property-struct lump 'g2c-vectors 'interp 3.0 (the-as structure #f) (& tag) (the-as pointer *g2c-buf*))))
+        (g2c-pv "struct-vector-interp" (the-as vector s))))
+    ;; métodos de res-tag con el tag como objeto de 128 bits
+    (let ((tag (g2c-tag 'g2c-alpha1 0.0 int32 3 1)))
+      (g2c-pi "tag-length-inline" (length tag))
+      (set! (-> tag inlined?) 0)
+      (g2c-pi "tag-length-ref" (length tag))
+      (print tag)
+      (format #t "~%")
+      (set! (-> tag inlined?) 1)
+      (print tag)
+      (format #t "~%"))
+    ;; allocate-data-memory-for-tag! directamente (devuelve el tag con data-offset)
+    (g2c-ptag "alloc-nuevo" (allocate-data-memory-for-tag! lump (g2c-tag 'g2c-newtag1 0.0 int32 0 1)))
+    (g2c-ptag "alloc-reuso" (allocate-data-memory-for-tag! lump (g2c-tag 'g2c-alpha1 0.0 int32 1 1)))
+    (g2c-plump "final")))
+
+(g2c-res-cases)
