@@ -1,0 +1,35 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de comprobación en ARM del lote C (engine/game, game/task, ui,
+;; ui/progress, debug). Ver arm_prelude.gc (el test lo antepone).
+;; Funciones de cálculo y de consulta: menú de progreso (niveles y tareas, sobre *game-info* y
+;; *level-task-data* de la imagen), estado de las tareas y el HUD de las celdas de energía.
+
+(defun g2c-lote-c-cases ()
+  (g2c-arm-begin "lote_c")
+  ;; ---- ui/progress ----
+  (dotimes (i 4)
+    (let ((a (* i 3)) (b (+ i 2)))
+      (g2c-arm "adjust-pos" adjust-pos a b)))
+  (dotimes (i 6)
+    (let ((lev (* i 3)))
+      ;; (get-next-level-up no: llama al método length de array, del kernel)
+      (g2c-arm "get-next-level-down" get-next-level-down lev)
+      (g2c-arm "get-next-task-up" get-next-task-up 0 lev)
+      (g2c-arm "get-next-task-down" get-next-task-down 3 lev)))
+  ;; ---- game/task: estado de las tareas (tablas de *game-info* de la imagen) ----
+  ;; desde la 2: la 1 (complete) no es válida y su camino de error llama a format
+  (dotimes (i 8)
+    (let ((task (the-as game-task (+ 2 (* i 11)))))
+      (g2c-arm "get-task-status" get-task-status task)
+      (g2c-arm "task-known?" task-known? task)
+      (g2c-arm "task-closed?" task-closed? task (task-status need-reminder))
+      (g2c-arm "task-exists?" task-exists? task (task-status need-introduction))))
+  ;; ---- ui/hud-classes: rotación y color de cada porción del HUD de celdas ----
+  (let ((m (the-as matrix (g2c-alloc 64))))
+    (dotimes (i 4)
+      (let ((slice i) (frac (* 0.4 (the float i))))
+        (g2c-arm-none "calculate-rotation-and-color-for-slice" calculate-rotation-and-color-for-slice
+                      slice frac 128 64 32 m))))
+  (g2c-arm-end))
+
+(g2c-lote-c-cases)

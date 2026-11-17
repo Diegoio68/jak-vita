@@ -237,6 +237,8 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   Lote A: 106 OK, 0 difieren, 3 inválidos, igual en PC y en Vita3K. Lote B: 34 OK.
   Funciones declaradas none en all-types (unpack-comp-rle): g2c-arm-none, el retorno de x86
   es basura. defun-debug (glst-*): segmento de depuración, fuera de la imagen.
+- Lote C (2026-11-17): 43 ficheros validados (game, game/task, ui, ui/progress, debug); ARM 58 OK.
+  En los casos, game-task 1 (complete) no es válida (su camino de error llama a format).
 - Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
   distintos: el inspect autogenerado depende del orden de compilación).
 
