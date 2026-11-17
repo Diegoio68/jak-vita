@@ -4,6 +4,11 @@ Fork de OpenGOAL (open-goal/jak-project). Meta: Jak 1 nativo en PS Vita a 30 fps
 mismo modelo que TwinsanityEvolved (decomp + runtime nativo + ISO de PS2 del usuario).
 Después Jak 2 y Jak 3.
 
+## Idioma (no negociable)
+- TODOS los mensajes a Diego en español: los intermedios entre herramientas, los de estado y
+  los resúmenes finales. Aunque los logs, el código o las salidas estén en inglés.
+  (Se incumplió dos veces el 2026-11-16 en tareas largas.)
+
 ## Reglas legales (no negociables)
 - NUNCA commitear datos del juego: ISOs, DGOs, texturas, audio, archivos extraídos.
   Viven en iso_data/, decompiler_out/, out/ y deben estar en .gitignore.
