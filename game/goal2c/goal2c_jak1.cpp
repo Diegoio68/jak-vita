@@ -38,6 +38,7 @@
 
 #include "game/kernel/common/codegen.h"
 #include "game/kernel/common/klink.h"
+#include "game/kernel/common/kernel_types.h"
 #include "game/kernel/common/kmalloc.h"
 #include "game/kernel/common/kscheme.h"
 #include "game/kernel/common/memory_layout.h"
@@ -120,6 +121,7 @@ g2c_q_call_systemv:
   movaps xmm14, [rsp + 304]
   movaps xmm15, [rsp + 320]
   add rsp, 344
+  mov r13, [rip + g2c_pp_cell]
   ret
 
   .globl g2c_call_goal_q
@@ -168,6 +170,15 @@ g2c_call_goal_q:
 extern "C" u64 g2c_call_goal8(void* func, const u64* args, u64 pp, u64 st, void* off, u64* pp_out)
     asm("g2c_call_goal8");
 
+// pp actual visto desde C (g_pp); el asm lo lee para recargar r13 al volver de C a x86
+extern "C" {
+u64 g2c_pp_cell asm("g2c_pp_cell") = 0;
+}
+// x86 -> C como _arg_call_systemv / _stack_call_systemv del kernel (mismo marco), pero al volver
+// recargan r13 de g2c_pp_cell (ver g_pp).
+extern "C" void g2c_arg_call() asm("g2c_arg_call");
+extern "C" void g2c_stack_call() asm("g2c_stack_call");
+
 // Suspend/resume nativos (ver "Suspend nativo" más abajo). Se entran desde código GOAL x86
 // (objeto función con movabs rax + jmp rax), con r14 = tabla de símbolos y r15 = base.
 // Campos (dirección GOAL t de un cpu-thread, basic: campo de offset o en t - 4 + o):
@@ -181,6 +192,77 @@ extern "C" u64 g2c_resume_restore(u64 thread, u64 kernel_rsp) asm("g2c_resume_re
 asm(R"(
   .text
   .intel_syntax noprefix
+  .globl g2c_arg_call
+g2c_arg_call:
+  pop rax
+  push r10
+  push r11
+  sub rsp, 136
+  movaps [rsp], xmm8
+  movaps [rsp + 16], xmm9
+  movaps [rsp + 32], xmm10
+  movaps [rsp + 48], xmm11
+  movaps [rsp + 64], xmm12
+  movaps [rsp + 80], xmm13
+  movaps [rsp + 96], xmm14
+  movaps [rsp + 112], xmm15
+  call rax
+  movaps xmm8, [rsp]
+  movaps xmm9, [rsp + 16]
+  movaps xmm10, [rsp + 32]
+  movaps xmm11, [rsp + 48]
+  movaps xmm12, [rsp + 64]
+  movaps xmm13, [rsp + 80]
+  movaps xmm14, [rsp + 96]
+  movaps xmm15, [rsp + 112]
+  add rsp, 136
+  pop r11
+  pop r10
+  mov r13, [rip + g2c_pp_cell]
+  ret
+
+  .globl g2c_stack_call
+g2c_stack_call:
+  pop rax
+  sub rsp, 136
+  movaps [rsp], xmm8
+  movaps [rsp + 16], xmm9
+  movaps [rsp + 32], xmm10
+  movaps [rsp + 48], xmm11
+  movaps [rsp + 64], xmm12
+  movaps [rsp + 80], xmm13
+  movaps [rsp + 96], xmm14
+  movaps [rsp + 112], xmm15
+  push r11
+  push r10
+  push r9
+  push r8
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  mov rdi, rsp
+  call rax
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop r8
+  pop r9
+  pop r10
+  pop r11
+  movaps xmm8, [rsp]
+  movaps xmm9, [rsp + 16]
+  movaps xmm10, [rsp + 32]
+  movaps xmm11, [rsp + 48]
+  movaps xmm12, [rsp + 64]
+  movaps xmm13, [rsp + 80]
+  movaps xmm14, [rsp + 96]
+  movaps xmm15, [rsp + 112]
+  add rsp, 136
+  mov r13, [rip + g2c_pp_cell]
+  ret
+
   .globl g2c_call_goal8
 g2c_call_goal8:
   push r13
@@ -314,8 +396,11 @@ std::map<std::string, int> g_replaced;  // objeto -> funciones sustituidas en su
 ObjectFileHeader* g_cur_ofh = nullptr;
 std::string g_cur_obj;
 
-// r13 (pp) de la última entrada x86 -> C. Se guarda/restaura en cada llamada C -> x86.
-u64 g_pp = 0;
+// r13 (pp) de la última entrada x86 -> C. host_call lo actualiza con el r13 final de cada llamada
+// C -> x86, y los trampolines x86 -> C (g2c_arg_call...) recargan r13 de aquí al volver: si el C
+// suspendió y el proceso se reubicó, el llamador x86 debe ver el pp nuevo (no el que tenía al
+// entrar, que el C conserva por ser r13 callee-saved en SysV).
+u64& g_pp = g2c_pp_cell;
 
 // Zona de los objetos función de entrada a C: fuera de los heaps de GOAL, en el hueco sin usar
 // entre el final del heap global y el heap de depuración. Así el heap del juego queda idéntico
@@ -331,6 +416,7 @@ constexpr u32 kDummySymbol = kEntryZoneStart + 0x10;
 u32 g_entry_next = kEntryZoneStart + kEntrySlot;
 u64 g_fingerprint_frame = 0;  // fotogramas desde el arranque del runtime (huella)
 u64 g_vclock_in_frame = 0;    // reloj virtual: ticks dentro del fotograma actual
+s64 g_script_start = -1;      // recorrido guionizado: fotograma en que apareció *target*
 
 u32 host_symbol(const char* name) {
   // Casi siempre el símbolo ya existe (el objeto x86 lo internó al enlazarse). Si no, crearlo
@@ -435,8 +521,8 @@ u32 make_c_entry(void* fn, Entry kind) {
   // movabs rax, trampolín ; jmp rax
   emit_movabs_rax(code, &off,
                   kind == Entry::Q       ? (u64)&g2c_q_call_systemv
-                  : kind == Entry::STACK ? (u64)&_stack_call_systemv
-                                         : (u64)&_arg_call_systemv);
+                  : kind == Entry::STACK ? (u64)&g2c_stack_call
+                                         : (u64)&g2c_arg_call);
   code[off++] = 0xff;
   code[off++] = 0xe0;
   ASSERT(off <= 0x40);
@@ -480,6 +566,34 @@ void segv_handler(int sig, siginfo_t* info, void* vctx) {
       (void)!write(2, buf, (size_t)n);
     }
     fp = (u64*)fp[0];
+  }
+  // Señal enviada a mano (kill/tgkill: SI_USER/SI_TKILL), para ver dónde está un proceso
+  // colgado: lista los valores de la pila que parecen direcciones de retorno (gk, librerías o
+  // código GOAL). Heurístico (sin marcos fiables en -O2), pero suele bastar.
+  if (info->si_code == SI_USER || info->si_code == SI_TKILL) {
+    u64 mem = (u64)g_ee_main_mem;
+    u64* sp = (u64*)rsp;
+    int shown = 0;
+    n = snprintf(buf, sizeof(buf), "[goal2c]   r13 (pp) 0x%llx, rdi 0x%llx\n",
+                 (unsigned long long)uc->uc_mcontext.gregs[REG_R13],
+                 (unsigned long long)uc->uc_mcontext.gregs[REG_RDI]);
+    (void)!write(2, buf, (size_t)n);
+    for (int i = 0; i < 4096 && shown < 60; i++) {
+      u64 v = sp[i];
+      Dl_info d{};
+      if (v >= mem + 0x100000 && v < mem + 0x8000000) {
+        n = snprintf(buf, sizeof(buf), "[goal2c]   pila+0x%x: GOAL 0x%llx\n", i * 8,
+                     (unsigned long long)(v - mem));
+      } else if (v > 0x10000 && dladdr((void*)v, &d) && d.dli_fname) {
+        n = snprintf(buf, sizeof(buf), "[goal2c]   pila+0x%x: %s + 0x%lx (%s)\n", i * 8,
+                     d.dli_fname, (unsigned long)((u8*)v - (u8*)d.dli_fbase),
+                     d.dli_sname ? d.dli_sname : "?");
+      } else {
+        continue;
+      }
+      shown++;
+      (void)!write(2, buf, (size_t)n);
+    }
   }
   // devolver el control al manejador anterior (o al de por defecto)
   sigaction(SIGSEGV, &g_prev_segv, nullptr);
@@ -999,6 +1113,7 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     *Ptr<u32>(kDummySymbol).c() = s7.offset;  // valor #f
     g_fingerprint_frame = 0;
     g_vclock_in_frame = 0;
+    g_script_start = -1;
   }
   if (g_files.empty()) {
     return;
@@ -1035,7 +1150,19 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
   const u32 function_type = *(s7 + FIX_SYM_FUNCTION_TYPE);
   int replaced = 0, skipped = 0, patched = 0, kept_pp = 0;
   for (auto* e = info->funcs; e->name; e++) {
-    if ((e->flags & G2C_FN_WRITES_PP) && !g_suspend_native) {
+    // diagnóstico: GOAL2C_PP_X86 deja en x86 todas las que escriben pp; GOAL2C_PP_SOLO=a,b solo
+    // instala en C las de esos objetos (para bisecar)
+    static const bool pp_x86 = std::getenv("GOAL2C_PP_X86") != nullptr;
+    static const char* pp_solo = std::getenv("GOAL2C_PP_SOLO");
+    bool pp_excluded = pp_x86 || (pp_solo && !strstr(("," + std::string(pp_solo) + ",").c_str(),
+                                                     ("," + obj + ",").c_str()));
+    static const char* fn_x86 = std::getenv("GOAL2C_FN_X86");  // diagnóstico: nombre,nombre
+    if (fn_x86 && strstr(("," + std::string(fn_x86) + ",").c_str(),
+                         ("," + std::string(e->name) + ",").c_str())) {
+      skipped++;
+      continue;
+    }
+    if ((e->flags & G2C_FN_WRITES_PP) && (!g_suspend_native || pp_excluded)) {
       kept_pp++;  // suspend / with-proc con el suspend de x86: se queda en x86
       continue;
     }
@@ -1168,6 +1295,102 @@ bool virtual_ee_timer(unsigned long long* ticks) {
   return true;
 }
 
+namespace {
+struct PadStep {
+  u64 from, to;  // [from, to) en fotogramas desde que existe *target*
+  u16 buttons;
+  u8 leftx, lefty;
+};
+std::vector<PadStep> g_script;
+u64 g_script_len = 0;  // el guion se repite
+bool g_script_loaded = false;
+
+u16 parse_buttons(const std::string& txt) {
+  static const char* names[16] = {"select", "l3", "r3", "start", "up", "right", "down", "left",
+                                  "l2", "r2", "l1", "r1", "triangle", "circle", "x", "square"};
+  u16 b = 0;
+  size_t pos = 0;
+  while (pos <= txt.size()) {
+    size_t end = txt.find('+', pos);
+    std::string name = txt.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+    for (int i = 0; i < 16; i++) {
+      if (name == names[i]) {
+        b |= (u16)(1 << i);
+      }
+    }
+    if (end == std::string::npos) {
+      break;
+    }
+    pos = end + 1;
+  }
+  return b;
+}
+
+void load_script(const char* path) {
+  g_script.clear();
+  g_script_len = 0;
+  FILE* f = fopen(path, "r");
+  if (!f) {
+    lg::die("[recorrido] no se puede leer {}", path);
+  }
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    if (line[0] == '#' || line[0] == '\n') {
+      continue;
+    }
+    unsigned long long dur;
+    char buttons[128];
+    unsigned lx, ly;
+    if (sscanf(line, "%llu %127s %u %u", &dur, buttons, &lx, &ly) == 4) {
+      PadStep st{g_script_len, g_script_len + dur, parse_buttons(buttons), (u8)lx, (u8)ly};
+      g_script.push_back(st);
+      g_script_len += dur;
+    }
+  }
+  fclose(f);
+  lg::info("[recorrido] {}: {} pasos, {} fotogramas (se repite)", path, g_script.size(),
+           g_script_len);
+}
+}  // namespace
+
+void scripted_pad(unsigned long long cpad_info) {
+  static const char* path = std::getenv("GOAL2C_RECORRIDO");
+  if (!path || !std::getenv("GOAL2C_HUELLA")) {
+    return;
+  }
+  if (!g_script_loaded) {
+    load_script(path);
+    g_script_loaded = true;
+  }
+  auto pad = Ptr<CPadInfo>((u32)cpad_info).c();
+  if (pad->number != 0 || g_script_len == 0) {
+    return;
+  }
+  // mando 0 conectado, DualShock (status 0x7_), en reposo
+  pad->valid = 0;
+  pad->status = 0x73;
+  pad->button0 = 0;
+  pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
+  if (g_script_start < 0) {
+    auto target = jak1::find_symbol_from_c("*target*");
+    u32 value = target.offset ? *Ptr<u32>(target.offset).c() : s7.offset;
+    if (value == s7.offset || value == 0) {
+      return;
+    }
+    g_script_start = (s64)g_fingerprint_frame;
+    lg::info("[recorrido] empieza en el fotograma {}", g_fingerprint_frame);
+  }
+  u64 t = (g_fingerprint_frame - (u64)g_script_start) % g_script_len;
+  for (auto& st : g_script) {
+    if (t >= st.from && t < st.to) {
+      pad->button0 = st.buttons;
+      pad->leftx = st.leftx;
+      pad->lefty = st.lefty;
+      break;
+    }
+  }
+}
+
 void frame_fingerprint(u32 chain) {
   static const bool enabled = std::getenv("GOAL2C_HUELLA") != nullptr;
   if (!enabled) {
@@ -1293,6 +1516,8 @@ int replaced_functions(const char*) {
 }
 
 void frame_fingerprint(unsigned int) {}
+
+void scripted_pad(unsigned long long) {}
 
 bool virtual_ee_timer(unsigned long long*) {
   return false;

@@ -15,17 +15,20 @@
 # Uso: test/goal2c/frame_check.sh [librería.so]
 #   CHECK_X86_TWICE=1: compara dos ejecuciones todo x86 (comprueba que la huella es determinista)
 #   FRAME_MIN: fotogramas comunes mínimos para dar el resultado por bueno (por defecto 600)
+#   FRAME_RECORRIDO: guion de entrada de mando (por defecto test/goal2c/recorrido.txt: Jak anda,
+#     salta, pega... por Sandover; vacío = Jak en reposo). Ver scripted_pad en goal2c_jak1.cpp.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="${1:-$ROOT/out/goal2c/jak1/libgoal2c_jak1.so}"
 SECS="${FRAME_SECS:-45}"
 MIN="${FRAME_MIN:-600}"
+RECORRIDO="${FRAME_RECORRIDO-$ROOT/test/goal2c/recorrido.txt}"
 OUT="$ROOT/build/pc_test"
 mkdir -p "$OUT"
 
 run() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
-  GOAL2C_HUELLA=1 GOAL2C_LIB="$2" timeout "$SECS" "$ROOT/build/game/gk" --no-display -v \
+  GOAL2C_HUELLA=1 GOAL2C_LIB="$2" GOAL2C_RECORRIDO="$RECORRIDO" timeout "$SECS" "$ROOT/build/game/gk" --no-display -v \
     --game jak1 -- -boot -fakeiso > "$OUT/frame_$1.log" 2>&1
   sed 's/\x1b\[[0-9;]*m//g' "$OUT/frame_$1.log" |
     grep -oE "\[huella\] [0-9]+ [0-9a-f]+ estricto [0-9a-f]+" |
@@ -39,6 +42,9 @@ run() {  # $1 = etiqueta, $2 = librería ("" = todo x86)
 # cambien (huella_ref_*.txt, con la marca de tiempo de gk y de out/jak1/obj en el nombre).
 stamp="$(stat -c %Y "$ROOT/build/game/gk")_$(ls -t "$ROOT/out/jak1/obj" | head -1 |
   xargs -I{} stat -c %Y "$ROOT/out/jak1/obj/{}")_$SECS"
+if [[ -n "$RECORRIDO" ]]; then
+  stamp="${stamp}_r$(stat -c %Y "$RECORRIDO")"
+fi
 REF="$OUT/huella_ref_$stamp"
 if [[ "${CHECK_X86_TWICE:-0}" != 1 && -s "$REF.txt" && -s "$REF.estricto.txt" ]]; then
   cp "$REF.txt" "$OUT/frame_a.txt"

@@ -162,6 +162,20 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   Validado con cam-states (17 funciones que suspenden) + todo lo ya en C: boot_smoke,
   frame_check, collide_check; mutación (pp viejo tras host_call) -> collide_check falla.
   Vita (Fase 3): mismo diseño en ARM (r4-r11, sp, lr, d8-d15) junto con el kernel en C.
+  OJO reubicación: si un C suspende y su proceso se mueve de memoria, al volver a su llamador x86
+  r13 debe ser el pp NUEVO. El C conserva r13 (callee-saved en SysV), así que los trampolines
+  x86 -> C propios (g2c_arg_call, g2c_stack_call, g2c_q_call_systemv) recargan r13 de g_pp al
+  volver. Sin eso: pp viejo -> lista de conexiones corrupta -> bucle infinito (visto en
+  ja-play-spooled-anim con el recorrido). En la Vita: tras cada llamada, pp sale de G2C_PP.
+- Recorrido guionizado: test/goal2c/recorrido.txt (GOAL2C_RECORRIDO, solo con GOAL2C_HUELLA):
+  CPadGetData sustituye el mando 0 por el guion; los fotogramas cuentan desde que existe
+  *target*; se repite. frame_check.sh lo usa por defecto (FRAME_RECORRIDO= lo desactiva). Pasa
+  por título, nueva partida y cinemática: cubre mucho más que Jak en reposo.
+- Diagnóstico: GOAL2C_FN_X86=nombre,... deja esas funciones en x86; GOAL2C_PP_X86 /
+  GOAL2C_PP_SOLO=obj,... para bisecar las que escriben pp. Proceso colgado: enviar SIGSEGV al
+  hilo EE (tgkill) y el manejador lista la pila (direcciones de gk, librerías y GOAL).
+  build_pc_lib.py --symbols = -O2 -g. NO usar --debug (-O0) para depurar en el juego: los marcos
+  de -O0 ocupan KB y desbordan la pila de los procesos (24 KB), da fallos falsos.
 - Lambdas (mov-fa) y funciones sin símbolo ni método (estados, behaviors anónimos): el C
   obtiene la dirección del objeto función en el objeto cargado (g2c_fn[], como los
   estáticos). En el modo mixto el runtime PARCHEA in situ su código x86 con

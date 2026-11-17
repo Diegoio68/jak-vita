@@ -160,6 +160,10 @@ u64 CPadOpen(u64 cpad_info, s32 pad_number) {
  */
 u64 CPadGetData(u64 cpad_info) {
   using namespace ee;
+  struct ScriptedPad {  // goal2c (Jak Vita): recorrido guionizado (solo con GOAL2C_RECORRIDO)
+    u64 info;
+    ~ScriptedPad() { goal2c_runtime::scripted_pad(info); }
+  } scripted_pad{cpad_info};
   auto cpad = Ptr<CPadInfo>(cpad_info).c();
   auto pad_state = scePadGetState(cpad->number, 0);
   if (pad_state == scePadStateDiscon) {

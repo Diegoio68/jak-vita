@@ -1,0 +1,35 @@
+# goal2c (Jak Vita): recorrido guionizado por Sandover para la huella por fotograma
+# (GOAL2C_RECORRIDO, ver scripted_pad en game/goal2c/goal2c_jak1.cpp y frame_check.sh).
+# Los fotogramas cuentan desde que existe *target*; el guion se repite.
+# Formato: duración (fotogramas)  botones (- = ninguno; varios con +)  stick izq. x  stick izq. y
+# Stick: 128 = centro; y 0 = adelante, 255 = atrás; x 0 = izquierda, 255 = derecha.
+# Botones: x salto, square puñetazo, circle patada giratoria, r1 agacharse.
+120 - 128 128
+90 - 128 0
+10 x 128 0
+30 - 128 0
+10 x 128 0
+6 - 128 0
+10 x 128 0
+60 - 128 0
+20 square 128 128
+40 - 128 128
+20 circle 128 128
+40 - 128 128
+90 - 0 128
+60 - 255 60
+30 r1 128 128
+10 r1+x 128 128
+60 - 128 128
+60 - 128 255
+20 - 128 0
+10 r1+square 128 0
+50 - 128 0
+10 square 128 0
+40 - 200 0
+10 x 200 0
+40 - 128 128
+20 circle 60 200
+60 - 60 200
+120 - 128 0
+30 - 128 128

@@ -32,4 +32,10 @@ void frame_fingerprint(unsigned int chain);
 //! juego no depende del tiempo real. Devuelve false si el modo huella no está activo.
 bool virtual_ee_timer(unsigned long long* ticks);
 
+//! Recorrido guionizado (GOAL2C_RECORRIDO=<guion>, con GOAL2C_HUELLA): sustituye la lectura del
+//! mando 0 (cpad_info: CPadInfo en la memoria GOAL) por la del guion para este fotograma. Los
+//! fotogramas del guion cuentan desde que existe *target* (Jak), así x86 y C reciben la misma
+//! entrada en el mismo fotograma de juego. Formato en test/goal2c/recorrido.txt.
+void scripted_pad(unsigned long long cpad_info);
+
 }  // namespace goal2c_runtime

@@ -47,7 +47,9 @@ def main():
     ap.add_argument("--dir", required=True, help="carpeta con los .c generados")
     ap.add_argument("--out", required=True, help="librería de salida (.so)")
     ap.add_argument("--cc", default="cc")
-    ap.add_argument("--debug", action="store_true", help="-O0 -g (para gdb)")
+    ap.add_argument("--debug", action="store_true", help="-O0 -g (para gdb; OJO: marcos de pila de "
+                    "varios KB, puede desbordar la pila de los procesos)")
+    ap.add_argument("--symbols", action="store_true", help="-O2 -g (mismo código, con símbolos)")
     args = ap.parse_args()
 
     src_dir = pathlib.Path(args.dir)
@@ -77,7 +79,7 @@ def main():
     registry = src_dir / "registry.c"
     registry.write_text(reg, encoding="utf-8")
 
-    opt = ["-O0", "-g"] if args.debug else ["-O2"]
+    opt = ["-O0", "-g"] if args.debug else (["-O2", "-g"] if args.symbols else ["-O2"])
     cmd = [args.cc, "-std=c11"] + opt + ["-fPIC", "-shared", "-fvisibility=hidden",
            "-Wall", "-Wextra", "-Werror", "-DG2C_PC_MIXED", f"-I{RUNTIME_DIR}",
            "-o", args.out, str(registry)] + [str(s) for s in sources]
