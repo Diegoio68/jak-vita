@@ -198,6 +198,10 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   IOP no lo copia; el EE lo calcula cada fotograma desde las órdenes del RPC de streams (canal 5)
   con reloj virtual y la duración de la cabecera VAG. GOAL2C_SONIDO_REAL=1 = comportamiento
   anterior (diagnóstico). Probado: 406 puntos de sincronía (6,8 min, 8 streams) sin ventana.
+  Pantalla y mandos: en modo determinista las consultas de GOAL a la pantalla (tamaño de
+  ventana, resoluciones...) y a los mandos (número, presión, vibración) responden como sin
+  ventana (game_display() en kmachine.cpp): con ventana daban otros valores y la grabación se
+  desincronizaba a los 86 s (2.ª grabación de Diego, 2026-11-17).
 - PROGRESO.md: estado del proyecto para Diego (actualizarlo en cada punto de control).
 - Diagnóstico: GOAL2C_FN_X86=nombre,... deja esas funciones en x86; GOAL2C_PP_X86 /
   GOAL2C_PP_SOLO=obj,... para bisecar las que escriben pp. Proceso colgado: enviar SIGSEGV al

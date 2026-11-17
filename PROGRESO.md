@@ -1,6 +1,6 @@
 # Jak Vita: progreso
 
-Actualizado: 2026-11-17 (punto de control: grabación fiable).
+Actualizado: 2026-11-17 (punto de control: segunda grabación).
 
 **Avance goal2c: 4611/9648 funciones de goal_src/jak1 en C dentro del juego (47.8 %);
 goal2c ya traduce 9637/9648 (99.9 %).**
@@ -34,13 +34,14 @@ goal2c ya traduce 9637/9648 (99.9 %).**
 
 ## Último logro
 
-La grabación del mando ya es fiable:
-- **Sonido determinista.** En modo determinista, lo que el juego ve del audio (`*sound-iop-info*`, posición de los streams) lo calcula el EE con reloj virtual. Antes iba en tiempo real y desincronizaba las cinemáticas.
-- **Cierre arreglado.** Era un fallo latente del juego: al saltar la intro mientras se carga Misty, un enlace a medias registraba partículas en un heap ya descartado. El arreglo está en `level.gc` (CAMBIO JAK VITA, pendiente de aprobar).
-- **Prueba sin ventana:** 406 puntos de sincronía, todos bien.
+- Grabación de Diego (7,3 min) completa y sin cierres: el arreglo de `level.gc` funciona.
+- Pero sin ventana se desincroniza a los 86 s (primera célula). La causa probable: con ventana,
+  el juego ve el tamaño de la pantalla y los mandos reales (proporción, cámara, menús); sin
+  ventana, no. Arreglado: en modo determinista el juego ve siempre "sin pantalla y sin mandos".
+  Hay que grabar otra vez para comprobarlo (la grabación anterior se hizo sin este arreglo).
 
 ## Siguiente paso
 
-1. Diego graba el recorrido oficial: `task boot-game GRABAR=test/goal2c/recorrido_oficial.txt`.
-2. Verificar que la grabación se reproduce igual sin ventana.
+1. Nueva grabación (o antes una prueba mía de 2 min con ventana, si Diego la permite).
+2. Verificar la sincronía sin ventana; si cuadra, es el recorrido oficial.
 3. Repetir la bisección de common-obs con ese recorrido.

@@ -536,9 +536,19 @@ u64 pc_get_mips2c(u32 name) {
   return Mips2C::gLinkedFunctionTable.get(n);
 }
 
+// goal2c (Jak Vita): en modo determinista (huella, grabación del mando) el juego ve la pantalla
+// como sin ventana, también si la hay: el tamaño de ventana/pantalla y las resoluciones cambian
+// la proporción y la cámara, y una grabación hecha con ventana no se reproducía igual sin ella.
+static std::shared_ptr<GfxDisplay> game_display() {
+  if (goal2c_runtime::deterministic_mode()) {
+    return nullptr;
+  }
+  return Display::GetMainDisplay();
+}
+
 u64 pc_get_display_id() {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_display_manager()->get_active_display_index();
+  if (game_display()) {
+    return game_display()->get_display_manager()->get_active_display_index();
   }
   return 0;
 }
@@ -551,8 +561,8 @@ void pc_set_display_id(u64 display_id) {
 
 u64 pc_get_display_name(u32 id, u32 str_dest_ptr) {
   std::string name = "";
-  if (Display::GetMainDisplay()) {
-    name = Display::GetMainDisplay()->get_display_manager()->get_connected_display_name(id);
+  if (game_display()) {
+    name = game_display()->get_display_manager()->get_connected_display_name(id);
   }
   if (name.empty()) {
     return bool_to_symbol(false);
@@ -571,8 +581,8 @@ u64 pc_get_display_name(u32 id, u32 str_dest_ptr) {
 
 u32 pc_get_display_mode() {
   auto display_mode = game_settings::DisplaySettings::DisplayMode::Windowed;
-  if (Display::GetMainDisplay()) {
-    display_mode = Display::GetMainDisplay()->get_display_manager()->get_display_mode();
+  if (game_display()) {
+    display_mode = game_display()->get_display_manager()->get_display_mode();
   }
   switch (display_mode) {
     case game_settings::DisplaySettings::DisplayMode::Borderless:
@@ -601,69 +611,69 @@ void pc_set_display_mode(u32 symptr, u64 window_width, u64 window_height) {
 }
 
 u64 pc_get_display_count() {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_display_manager()->num_connected_displays();
+  if (game_display()) {
+    return game_display()->get_display_manager()->num_connected_displays();
   }
   return 0;
 }
 
 void pc_get_active_display_size(u32 w_ptr, u32 h_ptr) {
-  if (!Display::GetMainDisplay()) {
+  if (!game_display()) {
     return;
   }
   if (w_ptr) {
     auto w_out = Ptr<s64>(w_ptr).c();
     if (w_out) {
-      *w_out = Display::GetMainDisplay()->get_display_manager()->get_screen_width();
+      *w_out = game_display()->get_display_manager()->get_screen_width();
     }
   }
   if (h_ptr) {
     auto h_out = Ptr<s64>(h_ptr).c();
     if (h_out) {
-      *h_out = Display::GetMainDisplay()->get_display_manager()->get_screen_height();
+      *h_out = game_display()->get_display_manager()->get_screen_height();
     }
   }
 }
 
 s64 pc_get_active_display_refresh_rate() {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_display_manager()->get_active_display_refresh_rate();
+  if (game_display()) {
+    return game_display()->get_display_manager()->get_active_display_refresh_rate();
   }
   return 0;
 }
 
 void pc_get_window_size(u32 w_ptr, u32 h_ptr) {
-  if (!Display::GetMainDisplay()) {
+  if (!game_display()) {
     return;
   }
   if (w_ptr) {
     auto w = Ptr<s64>(w_ptr).c();
     if (w) {
-      *w = Display::GetMainDisplay()->get_display_manager()->get_window_width();
+      *w = game_display()->get_display_manager()->get_window_width();
     }
   }
   if (h_ptr) {
     auto h = Ptr<s64>(h_ptr).c();
     if (h) {
-      *h = Display::GetMainDisplay()->get_display_manager()->get_window_height();
+      *h = game_display()->get_display_manager()->get_window_height();
     }
   }
 }
 
 void pc_get_window_scale(u32 x_ptr, u32 y_ptr) {
-  if (!Display::GetMainDisplay()) {
+  if (!game_display()) {
     return;
   }
   if (x_ptr) {
     auto x = Ptr<float>(x_ptr).c();
     if (x) {
-      *x = Display::GetMainDisplay()->get_display_manager()->get_window_scale_x();
+      *x = game_display()->get_display_manager()->get_window_scale_x();
     }
   }
   if (y_ptr) {
     auto y = Ptr<float>(y_ptr).c();
     if (y) {
-      *y = Display::GetMainDisplay()->get_display_manager()->get_window_scale_y();
+      *y = game_display()->get_display_manager()->get_window_scale_y();
     }
   }
 }
@@ -675,16 +685,16 @@ void pc_set_window_size(u64 width, u64 height) {
 }
 
 s64 pc_get_num_resolutions(u32 for_windowed) {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_display_manager()->get_num_resolutions(
+  if (game_display()) {
+    return game_display()->get_display_manager()->get_num_resolutions(
         symbol_to_bool(for_windowed));
   }
   return 0;
 }
 
 void pc_get_resolution(u32 id, u32 for_windowed, u32 w_ptr, u32 h_ptr) {
-  if (Display::GetMainDisplay()) {
-    auto res = Display::GetMainDisplay()->get_display_manager()->get_resolution(
+  if (game_display()) {
+    auto res = game_display()->get_display_manager()->get_resolution(
         id, symbol_to_bool(for_windowed));
     auto w = Ptr<s64>(w_ptr).c();
     if (w) {
@@ -698,17 +708,17 @@ void pc_get_resolution(u32 id, u32 for_windowed, u32 w_ptr, u32 h_ptr) {
 }
 
 u64 pc_is_supported_resolution(u64 width, u64 height) {
-  if (Display::GetMainDisplay()) {
+  if (game_display()) {
     return bool_to_symbol(
-        Display::GetMainDisplay()->get_display_manager()->is_supported_resolution(width, height));
+        game_display()->get_display_manager()->is_supported_resolution(width, height));
   }
   return bool_to_symbol(false);
 }
 
 u64 pc_get_controller_name(u32 id, u32 str_dest_ptr) {
   std::string name = "";
-  if (Display::GetMainDisplay()) {
-    name = Display::GetMainDisplay()->get_input_manager()->get_controller_name(id);
+  if (game_display()) {
+    name = game_display()->get_input_manager()->get_controller_name(id);
   }
   if (name.empty()) {
     return bool_to_symbol(false);
@@ -727,7 +737,7 @@ u64 pc_get_controller_name(u32 id, u32 str_dest_ptr) {
 }
 
 u64 pc_get_current_bind(s32 bind_assignment_info, u32 str_dest_ptr) {
-  if (!Display::GetMainDisplay()) {
+  if (!game_display()) {
     // TODO - return something that lets the runtime use a translatable string if unknown
     strcpy(Ptr<String>(str_dest_ptr).c()->data(), str_util::to_upper("unknown").c_str());
     return bool_to_symbol(true);
@@ -740,8 +750,8 @@ u64 pc_get_current_bind(s32 bind_assignment_info, u32 str_dest_ptr) {
   auto input_idx = (int)info->input_idx;
   auto analog_min_range = info->analog_min_range != s7.offset;
 
-  if (Display::GetMainDisplay()) {
-    auto name = Display::GetMainDisplay()->get_input_manager()->get_current_bind(
+  if (game_display()) {
+    auto name = game_display()->get_input_manager()->get_current_bind(
         port, (InputDeviceType)device_type, for_button, input_idx, analog_min_range);
     if (name.empty()) {
       return bool_to_symbol(false);
@@ -762,15 +772,15 @@ u64 pc_get_current_bind(s32 bind_assignment_info, u32 str_dest_ptr) {
 }
 
 u64 pc_get_controller_count() {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_input_manager()->get_num_controllers();
+  if (game_display()) {
+    return game_display()->get_input_manager()->get_num_controllers();
   }
   return 0;
 }
 
 u64 pc_get_controller_index(u32 port) {
-  if (Display::GetMainDisplay()) {
-    return Display::GetMainDisplay()->get_input_manager()->get_controller_index(port);
+  if (game_display()) {
+    return game_display()->get_input_manager()->get_controller_index(port);
   }
   return 0;
 }
@@ -782,8 +792,8 @@ void pc_set_controller(u32 controller_id, u32 port) {
 }
 
 u32 pc_get_keyboard_enabled() {
-  if (Display::GetMainDisplay()) {
-    return bool_to_symbol(Display::GetMainDisplay()->get_input_manager()->is_keyboard_enabled());
+  if (game_display()) {
+    return bool_to_symbol(game_display()->get_input_manager()->is_keyboard_enabled());
   }
   return bool_to_symbol(false);
 }
@@ -819,15 +829,15 @@ void pc_ignore_background_controller_events(u32 sym_val) {
 }
 
 u64 pc_current_controller_has_led() {
-  if (Display::GetMainDisplay()) {
-    return bool_to_symbol(Display::GetMainDisplay()->get_input_manager()->controller_has_led(0));
+  if (game_display()) {
+    return bool_to_symbol(game_display()->get_input_manager()->controller_has_led(0));
   }
   return bool_to_symbol(false);
 }
 
 u64 pc_current_controller_has_rumble() {
-  if (Display::GetMainDisplay()) {
-    return bool_to_symbol(Display::GetMainDisplay()->get_input_manager()->controller_has_rumble(0));
+  if (game_display()) {
+    return bool_to_symbol(game_display()->get_input_manager()->controller_has_rumble(0));
   }
   return bool_to_symbol(false);
 }
@@ -840,8 +850,8 @@ void pc_set_controller_led(const int port, const u8 red, const u8 green, const u
 }
 
 u64 pc_waiting_for_bind() {
-  if (Display::GetMainDisplay()) {
-    return bool_to_symbol(Display::GetMainDisplay()->get_input_manager()->get_waiting_for_bind());
+  if (game_display()) {
+    return bool_to_symbol(game_display()->get_input_manager()->get_waiting_for_bind());
   }
   return bool_to_symbol(false);
 }
@@ -877,9 +887,9 @@ void pc_set_auto_hide_cursor(u32 val) {
 }
 
 u64 pc_get_pressure_sensitivity_enabled() {
-  if (Display::GetMainDisplay()) {
+  if (game_display()) {
     return bool_to_symbol(
-        Display::GetMainDisplay()->get_input_manager()->is_pressure_sensitivity_enabled());
+        game_display()->get_input_manager()->is_pressure_sensitivity_enabled());
   }
   return bool_to_symbol(false);
 }
@@ -908,26 +918,26 @@ u32 pc_get_axis_scale() {
 }
 
 u64 pc_current_controller_has_pressure_sensitivity() {
-  if (Display::GetMainDisplay()) {
+  if (game_display()) {
     return bool_to_symbol(
-        Display::GetMainDisplay()->get_input_manager()->controller_has_pressure_sensitivity_support(
+        game_display()->get_input_manager()->controller_has_pressure_sensitivity_support(
             0));
   }
   return bool_to_symbol(false);
 }
 
 u64 pc_current_controller_has_trigger_effect_support() {
-  if (Display::GetMainDisplay()) {
+  if (game_display()) {
     return bool_to_symbol(
-        Display::GetMainDisplay()->get_input_manager()->controller_has_trigger_effect_support(0));
+        game_display()->get_input_manager()->controller_has_trigger_effect_support(0));
   }
   return bool_to_symbol(false);
 }
 
 u64 pc_get_trigger_effects_enabled() {
-  if (Display::GetMainDisplay()) {
+  if (game_display()) {
     return bool_to_symbol(
-        Display::GetMainDisplay()->get_input_manager()->are_trigger_effects_enabled());
+        game_display()->get_input_manager()->are_trigger_effects_enabled());
   }
   return bool_to_symbol(false);
 }
