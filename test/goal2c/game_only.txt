@@ -330,6 +330,10 @@ robotboss goal_src/jak1/levels/finalboss/robotboss.gc
 final-door goal_src/jak1/levels/finalboss/final-door.gc
 sage-finalboss goal_src/jak1/levels/finalboss/sage-finalboss.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
+jungleb-obs goal_src/jak1/levels/jungleb/jungleb-obs.gc
+plat-flip goal_src/jak1/levels/jungleb/plat-flip.gc
+aphid goal_src/jak1/levels/jungleb/aphid.gc
+plant-boss goal_src/jak1/levels/jungleb/plant-boss.gc
 jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
 bouncer goal_src/jak1/levels/jungle/bouncer.gc
 hopper goal_src/jak1/levels/jungle/hopper.gc
