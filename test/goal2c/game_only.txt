@@ -354,6 +354,17 @@ misty-part goal_src/jak1/levels/misty/misty-part.gc
 sidekick-human goal_src/jak1/levels/misty/sidekick-human.gc
 firecanyon-part goal_src/jak1/levels/firecanyon/firecanyon-part.gc
 assistant-firecanyon goal_src/jak1/levels/firecanyon/assistant-firecanyon.gc
+village2-part goal_src/jak1/levels/village2/village2-part.gc
+village2-obs goal_src/jak1/levels/village2/village2-obs.gc
+village2-part2 goal_src/jak1/levels/village2/village2-part2.gc
+gambler goal_src/jak1/levels/village2/gambler.gc
+warrior goal_src/jak1/levels/village2/warrior.gc
+geologist goal_src/jak1/levels/village2/geologist.gc
+swamp-blimp goal_src/jak1/levels/village2/swamp-blimp.gc
+sage-bluehut goal_src/jak1/levels/village2/sage-bluehut.gc
+flutflut-bluehut goal_src/jak1/levels/village2/flutflut-bluehut.gc
+assistant-village2 goal_src/jak1/levels/village2/assistant-village2.gc
+sunken-elevator goal_src/jak1/levels/village2/sunken-elevator.gc
 firecanyon-obs goal_src/jak1/levels/firecanyon/firecanyon-obs.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
