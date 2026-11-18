@@ -1,6 +1,7 @@
 # Fase 3: las 11 funciones del kernel en la Vita (propuesta de diseño, sin implementar)
 
-Fecha: 2026-11-18. Estado: **propuesta para revisar con Diego**.
+Fecha: 2026-11-18. Estado: **aprobado por Diego** (las tres recomendaciones: copia de pila, patrones
+en goal2c, primitivas propias).
 
 ## Qué son y por qué no se traducen
 

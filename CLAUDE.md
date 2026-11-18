@@ -201,6 +201,17 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   ventana, resoluciones...) y a los mandos (número, presión, vibración) responden como sin
   ventana (game_display() en kmachine.cpp): con ventana daban otros valores y la grabación se
   desincronizaba a los 86 s (2.ª grabación de Diego, 2026-11-17).
+- Partidas de Diego: `test/goal2c/jugar_c.sh` graba SIEMPRE el mando (modo determinista, con una
+  copia de su configuración y partidas en build/pc_test/sesiones/<fecha>/); si falla,
+  `test/goal2c/reproducir.sh <sesión>` lo repite sin ventana. `--libre` = modo normal sin grabar.
+- Suspend nativo, semántica de x86: la copia de la pila persiste hasta la siguiente suspensión del
+  hilo o la muerte del proceso (un hilo puede reanudarse dos veces sin suspender en medio, como
+  con el área de respaldo de x86). El búfer guarda el pid del dueño (reubicación). Cambiado tras
+  un cierre de Diego en Geyser Rock (puerta de eco azul, modo normal): "resume nativo: ... no
+  tiene una pila guardada válida"; no reproducido aún (su partida no estaba grabada).
+- Fase 3, diseño del kernel en ARM APROBADO (2026-11-18, docs/notas/diseno_kernel_arm.md): copia
+  de pila, goal2c reconoce los patrones de salto de enter-state/deactivate/compute-alignment! y
+  primitivas propias (contexto AAPCS + ejecutar en otra pila).
 - PROGRESO.md: estado del proyecto para Diego (actualizarlo en cada punto de control).
 - Diagnóstico: GOAL2C_FN_X86=nombre,... deja esas funciones en x86; GOAL2C_PP_X86 /
   GOAL2C_PP_SOLO=obj,... para bisecar las que escriben pp. Proceso colgado: enviar SIGSEGV al

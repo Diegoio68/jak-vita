@@ -960,8 +960,11 @@ u64 g2c_rec(u64 cmd, u64 a, u64 b, u64 c) {
 constexpr u32 kSuspendMagic = 0x53433247;  // "G2CS"
 struct SuspendBuf {
   u32 cookie = 0;  // 0 = libre
+  u32 pid = 0;     // pid del proceso dueño (un proceso reubicado conserva su pid)
+  u32 restored = 0;  // veces que se ha restaurado (x86 permite reanudar dos veces)
   std::vector<u8> data;
 };
+u64 g_susp_double_resume = 0;
 std::vector<SuspendBuf> g_susp;
 std::vector<u32> g_susp_free;
 u32 g_susp_cookie = 0;
@@ -985,11 +988,18 @@ void susp_free(u32 id) {
 }
 
 //! Libera el búfer del hilo si el área apunta a una suspensión viva (cookie). Devuelve el id.
+//! pid del proceso del hilo (process pid: campo de offset 40 -> p + 36)
+u32 thread_pid(u32 thread) {
+  u32 proc = goal_field<u32>(thread, 4);
+  return proc ? goal_field<u32>(proc, 36) : 0;
+}
+
+//! Búfer de la última suspensión del hilo, si el área apunta a uno vivo de este mismo proceso.
 int susp_lookup(u32 thread) {
   u32 magic = goal_field<u32>(thread, 124), id = goal_field<u32>(thread, 128),
       cookie = goal_field<u32>(thread, 132);
   if (magic != kSuspendMagic || id >= g_susp.size() || g_susp[id].cookie == 0 ||
-      g_susp[id].cookie != cookie) {
+      g_susp[id].cookie != cookie || g_susp[id].pid != thread_pid(thread)) {
     return -1;
   }
   return (int)id;
@@ -1074,6 +1084,12 @@ extern "C" u64 g2c_suspend_save(u64 thread64, u64 rsp) {
     lg::die("[goal2c] suspend nativo: hilo 0x{:x} con sp 0x{:x} y stack-top 0x{:x}", thread, sp,
             top);
   }
+  // Como en x86 (la copia vive en el área de respaldo del hilo y persiste), el búfer dura hasta
+  // la siguiente suspensión del hilo o la muerte del proceso: un hilo puede reanudarse dos veces
+  // sin suspender en medio. Aquí se libera el de la suspensión anterior de este hilo.
+  if (int prev = susp_lookup(thread); prev >= 0) {
+    susp_free((u32)prev);
+  }
   u32 id;
   if (!g_susp_free.empty()) {
     id = g_susp_free.back();
@@ -1087,6 +1103,8 @@ extern "C" u64 g2c_suspend_save(u64 thread64, u64 rsp) {
   }
   auto& b = g_susp[id];
   b.cookie = g_susp_cookie;
+  b.pid = thread_pid(thread);
+  b.restored = 0;
   b.data.assign(g_ee_main_mem + sp, g_ee_main_mem + top);
   goal_field<u32>(thread, 124) = kSuspendMagic;
   goal_field<u32>(thread, 128) = id;
@@ -1115,13 +1133,37 @@ extern "C" u64 g2c_resume_restore(u64 thread64, u64 kernel_rsp) {
     restored = 1;
     int id = susp_lookup(thread);
     if (id < 0 || g_susp[id].data.size() != top - sp) {
-      lg::die("[goal2c] resume nativo: el hilo 0x{:x} (sp 0x{:x}, stack-top 0x{:x}) no tiene "
-              "una pila guardada válida",
-              thread, sp, top);
+      u32 magic = goal_field<u32>(thread, 124), aid = goal_field<u32>(thread, 128),
+          cookie = goal_field<u32>(thread, 132);
+      u32 proc = goal_field<u32>(thread, 4);
+      std::string pname = "?", tname = "?";
+      if (proc) {
+        u32 n = goal_field<u32>(proc, 0);  // process-tree name (offset 4 -> p + 0)
+        if (n && *Ptr<u32>(n - 4).c() == *(s7 + FIX_SYM_STRING_TYPE)) {
+          pname = Ptr<String>(n)->data();
+        }
+      }
+      if (u32 tn = goal_field<u32>(thread, 0); tn) {  // thread name (símbolo)
+        tname = symbol_name(tn);
+      }
+      std::string buf = "-";
+      if (magic == kSuspendMagic && aid < g_susp.size()) {
+        buf = fmt::format("búfer {}: cookie {} (área {}), pid {} (proceso {}), {} bytes, "
+                          "restaurado {} veces",
+                          aid, g_susp[aid].cookie, cookie, g_susp[aid].pid, thread_pid(thread),
+                          g_susp[aid].data.size(), g_susp[aid].restored);
+      }
+      lg::die("[goal2c] resume nativo: el hilo 0x{:x} '{}' del proceso '{}' (sp 0x{:x}, "
+              "stack-top 0x{:x}) no tiene una pila guardada válida; área marca {:x} id {} "
+              "cookie {}; {}",
+              thread, tname, pname, sp, top, magic, aid, cookie, buf);
     }
     memcpy(g_ee_main_mem + sp, g_susp[id].data.data(), top - sp);
-    susp_free((u32)id);
-    goal_field<u32>(thread, 124) = 0;
+    if (g_susp[id].restored++ > 0 && g_susp_double_resume++ < 20) {
+      lg::warn("[goal2c] resume nativo: el hilo 0x{:x} se reanuda otra vez desde la misma "
+               "suspensión (como en x86)",
+               thread);
+    }
   }
   u32 proc = goal_field<u32>(thread, 4);
   goal_field<u32>(proc, 44) = thread;          // top-thread
