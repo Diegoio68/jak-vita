@@ -310,6 +310,7 @@ beach-part goal_src/jak1/levels/beach/beach-part.gc
 villagep-obs goal_src/jak1/levels/village_common/villagep-obs.gc
 oracle goal_src/jak1/levels/village_common/oracle.gc
 battlecontroller goal_src/jak1/levels/common/battlecontroller.gc
+snow-bunny goal_src/jak1/levels/snow/snow-bunny.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
 jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
 bouncer goal_src/jak1/levels/jungle/bouncer.gc
@@ -415,5 +416,17 @@ minecart goal_src/jak1/levels/village3/minecart.gc
 miners goal_src/jak1/levels/village3/miners.gc
 assistant-village3 goal_src/jak1/levels/village3/assistant-village3.gc
 sage-village3 goal_src/jak1/levels/village3/sage-village3.gc
+target-snowball goal_src/jak1/levels/snow/target-snowball.gc
+target-ice goal_src/jak1/levels/snow/target-ice.gc
+ice-cube goal_src/jak1/levels/snow/ice-cube.gc
+snow-ball goal_src/jak1/levels/snow/snow-ball.gc
+snow-obs goal_src/jak1/levels/snow/snow-obs.gc
+snow-flutflut-obs goal_src/jak1/levels/snow/snow-flutflut-obs.gc
+snow-bumper goal_src/jak1/levels/snow/snow-bumper.gc
+snow-ram-h goal_src/jak1/levels/snow/snow-ram-h.gc
+snow-ram-boss goal_src/jak1/levels/snow/snow-ram-boss.gc
+snow-ram goal_src/jak1/levels/snow/snow-ram.gc
+snow-part goal_src/jak1/levels/snow/snow-part.gc
+yeti goal_src/jak1/levels/snow/yeti.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
