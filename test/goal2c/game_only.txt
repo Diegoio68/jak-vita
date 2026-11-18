@@ -319,6 +319,16 @@ citb-bunny goal_src/jak1/levels/citadel/citb-bunny.gc
 citb-drop-plat goal_src/jak1/levels/citadel/citb-drop-plat.gc
 assistant-citadel goal_src/jak1/levels/citadel/assistant-citadel.gc
 darkcave-obs goal_src/jak1/levels/darkcave/darkcave-obs.gc
+robotboss-h goal_src/jak1/levels/finalboss/robotboss-h.gc
+robotboss-part goal_src/jak1/levels/finalboss/robotboss-part.gc
+sage-finalboss-part goal_src/jak1/levels/finalboss/sage-finalboss-part.gc
+light-eco goal_src/jak1/levels/finalboss/light-eco.gc
+robotboss-weapon goal_src/jak1/levels/finalboss/robotboss-weapon.gc
+robotboss-misc goal_src/jak1/levels/finalboss/robotboss-misc.gc
+green-eco-lurker goal_src/jak1/levels/finalboss/green-eco-lurker.gc
+robotboss goal_src/jak1/levels/finalboss/robotboss.gc
+final-door goal_src/jak1/levels/finalboss/final-door.gc
+sage-finalboss goal_src/jak1/levels/finalboss/sage-finalboss.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
 jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
 bouncer goal_src/jak1/levels/jungle/bouncer.gc
