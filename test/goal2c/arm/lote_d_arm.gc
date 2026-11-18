@@ -1,0 +1,16 @@
+;;-*-Lisp-*-
+;; goal2c (Jak Vita): casos de comprobación en ARM del lote D (engine/target, engine/common-obs).
+;; Ver arm_prelude.gc (el test lo antepone). El lote tiene pocas funciones de cálculo puras: casi
+;; todo son estados y comportamientos, que valida la huella con el recorrido oficial.
+
+(defun g2c-lote-d-cases ()
+  (g2c-arm-begin "lote_d")
+  ;; ---- target: remapeo de las películas de muerte (división, mod, xor con signo) ----
+  (dotimes (i 6)
+    (let ((a (+ (* i 37) -50)) (b (+ i 3)))
+      (g2c-arm "death-movie-remap" death-movie-remap a b)))
+  (g2c-arm "death-movie-remap-grande" death-movie-remap #x7ffffff 13)
+  ;; (rigid-body.gc no está en GAME.CGO: no existe en el runtime de las pruebas)
+  (g2c-arm-end))
+
+(g2c-lote-d-cases)

@@ -301,6 +301,13 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   es basura. defun-debug (glst-*): segmento de depuración, fuera de la imagen.
 - Lote C (2026-11-17): 43 ficheros validados (game, game/task, ui, ui/progress, debug); ARM 58 OK.
   En los casos, game-task 1 (complete) no es válida (su camino de error llama a format).
+- Lote D (2026-11-18): engine/target (10) + engine/common-obs entero (27), con el recorrido
+  oficial. Los 10 "culpables" de common-obs eran un fallo del runtime: los objetos de entrada a
+  C tenían el código en +16 (0 mod 8) y un objeto función es un basic (4 mod 8): valid? lo
+  rechazaba y birth! no hacía nacer los actores con init-from-entity! en C. Ahora código en +20.
+  game_only.txt va en orden de compilación (all_objs.json): GameOnlyFiles transpila en ese orden
+  y cada fichero necesita los tipos de los anteriores (validate_batch lo ordena al añadir).
+  ARM: 7 casos (death-movie-remap); rigid-body.gc no está en GAME.CGO (no existe en las pruebas).
 - Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
   distintos: el inspect autogenerado depende del orden de compilación).
 

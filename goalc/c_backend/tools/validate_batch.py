@@ -158,6 +158,17 @@ def find_culprits(objs):
     return culprits
 
 
+def sort_game_only():
+    """Ordena game_only.txt por orden de compilación del juego (all_objs.json): el test
+    GameOnlyFiles transpila en ese orden y cada fichero necesita los tipos de los anteriores."""
+    order = {name: i for i, (name, _f, _s) in enumerate(code_objects())}
+    lines = GAME_ONLY.read_text(encoding="utf-8").splitlines()
+    head = [l for l in lines if not l.strip() or l.startswith("#")]
+    body = [l for l in lines if l.strip() and not l.startswith("#")]
+    body.sort(key=lambda l: order.get(l.split()[0], 1 << 30))
+    GAME_ONLY.write_text("\n".join(head + body) + "\n", encoding="utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("folders", nargs="*")
@@ -199,6 +210,7 @@ def main():
     with open(GAME_ONLY, "a", encoding="utf-8") as f:
         for name, folder, src in ok:
             f.write(f"{name} {src.relative_to(ROOT).as_posix()}\n")
+    sort_game_only()
     log(f"validados {len(ok)} ficheros (añadidos a {GAME_ONLY.relative_to(ROOT)})")
     for c in culprits:
         log(f"fuera del lote (falla en el juego): {c[0]}")

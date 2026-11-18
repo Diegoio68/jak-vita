@@ -406,7 +406,10 @@ u64& g_pp = g2c_pp_cell;
 // entre el final del heap global y el heap de depuración. Así el heap del juego queda idéntico
 // al de una ejecución todo x86 (las direcciones de los objetos del juego no cambian y se pueden
 // comparar estructuras enteras, p. ej. la cadena DMA de cada fotograma). Huecos de 64 bytes:
-// etiqueta de tipo en +12 y código en +16 (48 bytes; el código de entrada mide 36).
+// etiqueta de tipo en +16 y código en +20 (44 bytes; el código de entrada mide 36). El objeto
+// función es un basic: su dirección debe ser 4 (mod 8), como la de los de goalc. Con el código en
+// +16 (0 mod 8) valid? lo rechazaba ("misaligned") y birth! no hacía nacer los actores cuyo
+// init-from-entity! estaba en C (fallo de casi todo common-obs, 2026-11-17).
 constexpr u32 kEntryZoneStart = 0x4e00000;
 constexpr u32 kEntryZoneEnd = DEBUG_HEAP_START;
 constexpr u32 kEntrySlot = 0x40;
@@ -506,8 +509,8 @@ u32 make_c_entry(void* fn, Entry kind) {
   u32 slot = g_entry_next;
   g_entry_next += kEntrySlot;
   memset(Ptr<u8>(slot).c(), 0, kEntrySlot);
-  *Ptr<u32>(slot + 12).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
-  auto mem = Ptr<u8>(slot + 16);
+  *Ptr<u32>(slot + 16).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
+  auto mem = Ptr<u8>(slot + 20);
   u8* code = mem.c();
   int off = 0;
   // movabs rax, &g_pp ; mov [rax], r13
@@ -525,7 +528,7 @@ u32 make_c_entry(void* fn, Entry kind) {
                                          : (u64)&g2c_arg_call);
   code[off++] = 0xff;
   code[off++] = 0xe0;
-  ASSERT(off <= 0x40);
+  ASSERT(20 + off <= (int)kEntrySlot);
   flush_icache_goal(mem.offset, off);
   return mem.offset;
 }
@@ -975,8 +978,8 @@ u32 make_jmp_entry(void* target) {
   u32 slot = g_entry_next;
   g_entry_next += kEntrySlot;
   memset(Ptr<u8>(slot).c(), 0, kEntrySlot);
-  *Ptr<u32>(slot + 12).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
-  auto mem = Ptr<u8>(slot + 16);
+  *Ptr<u32>(slot + 16).c() = *(s7 + FIX_SYM_FUNCTION_TYPE);
+  auto mem = Ptr<u8>(slot + 20);
   int off = 0;
   emit_movabs_rax(mem.c(), &off, (u64)target);
   mem.c()[off++] = 0xff;

@@ -534,6 +534,9 @@ TEST_F(Goal2CTests, ArmLoteB) {
 TEST_F(Goal2CTests, ArmLoteC) {
   record_arm_lot(shared->compiler, "lote_c");
 }
+TEST_F(Goal2CTests, ArmLoteD) {
+  record_arm_lot(shared->compiler, "lote_d");
+}
 
 //! Ficheros sin casos propios (game_only.txt): transpilar y comprobar que el C compila limpio.
 TEST_F(Goal2CTests, GameOnlyFiles) {
