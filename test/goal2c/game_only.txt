@@ -310,7 +310,14 @@ beach-part goal_src/jak1/levels/beach/beach-part.gc
 villagep-obs goal_src/jak1/levels/village_common/villagep-obs.gc
 oracle goal_src/jak1/levels/village_common/oracle.gc
 battlecontroller goal_src/jak1/levels/common/battlecontroller.gc
+citadel-part goal_src/jak1/levels/citadel/citadel-part.gc
+citadel-obs goal_src/jak1/levels/citadel/citadel-obs.gc
+citb-plat goal_src/jak1/levels/citadel/citb-plat.gc
+citadel-sages goal_src/jak1/levels/citadel/citadel-sages.gc
 snow-bunny goal_src/jak1/levels/snow/snow-bunny.gc
+citb-bunny goal_src/jak1/levels/citadel/citb-bunny.gc
+citb-drop-plat goal_src/jak1/levels/citadel/citb-drop-plat.gc
+assistant-citadel goal_src/jak1/levels/citadel/assistant-citadel.gc
 darkcave-obs goal_src/jak1/levels/darkcave/darkcave-obs.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
 jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
