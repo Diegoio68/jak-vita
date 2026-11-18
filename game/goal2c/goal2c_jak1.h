@@ -43,6 +43,12 @@ void scripted_pad(unsigned long long cpad_info);
 //! Con GOAL2C_GRABAR=<fichero>, scripted_pad graba el mando 0 en formato de recorrido.
 bool deterministic_mode();
 
+//! Salto de nivel determinista (GOAL2C_SALTO=<punto de continuación>, en modo determinista):
+//! GOAL2C_SALTO_FOTOGRAMA fotogramas (600: con village1 ya cargado) después de que exista *target*, ejecuta como el REPL
+//! (start 'play (get-continue-by-name *game-info* "<nombre>")). Se llama en kboot antes de cada
+//! despacho del kernel.
+void before_kernel_dispatch();
+
 //! Sonido determinista (det_sound_jak1.cpp): en modo determinista *sound-iop-info* (strpos...)
 //! lo calcula el EE a partir de las órdenes de stream del juego (RPC de canal 5), no el IOP.
 bool det_sound_on();

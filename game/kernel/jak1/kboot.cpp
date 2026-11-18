@@ -6,6 +6,8 @@
 
 #include "kboot.h"
 
+#include "game/goal2c/goal2c_jak1.h"  // goal2c (Jak Vita)
+
 #include <chrono>
 #include <cstring>
 #include <stdio.h>
@@ -115,6 +117,7 @@ void KernelCheckAndDispatch() {
       ProcessListenerMessage(new_message);
     }
 
+    goal2c_runtime::before_kernel_dispatch();  // goal2c (Jak Vita): GOAL2C_SALTO
     // remember the old listener function
     auto old_listener = ListenerFunction->value;
     // dispatch the kernel

@@ -42,6 +42,7 @@
 #include "game/kernel/common/kmalloc.h"
 #include "game/kernel/common/kscheme.h"
 #include "game/kernel/common/memory_layout.h"
+#include "game/kernel/jak1/klisten.h"
 #include "game/kernel/jak1/kscheme.h"
 #include "goalc/c_backend/runtime/goal2c_rt.h"
 
@@ -420,6 +421,8 @@ u32 g_entry_next = kEntryZoneStart + kEntrySlot;
 u64 g_fingerprint_frame = 0;  // fotogramas desde el arranque del runtime (huella)
 u64 g_vclock_in_frame = 0;    // reloj virtual: ticks dentro del fotograma actual
 s64 g_script_start = -1;      // recorrido guionizado: fotograma en que apareció *target*
+u32 g_salto_string = 0;       // GOAL2C_SALTO: nombre del punto de continuación (string GOAL)
+bool g_salto_hecho = false;
 
 u32 host_symbol(const char* name) {
   // Casi siempre el símbolo ya existe (el objeto x86 lo internó al enlazarse). Si no, crearlo
@@ -1118,6 +1121,7 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     g_fingerprint_frame = 0;
     g_vclock_in_frame = 0;
     g_script_start = -1;
+    g_salto_hecho = false;
     det_sound_reset();
     if (deterministic_mode()) {
       install_segv_handler();  // también en x86 puro (diagnóstico de la huella y la grabación)
@@ -1510,7 +1514,60 @@ void grab_pad(const char* path, const CPadInfo* pad, u64 t) {
   }
   record_pad(pad, t);
 }
+
+u64 salto_fn() {
+  const char* name = std::getenv("GOAL2C_SALTO");
+  u32 gi = symbol_value("*game-info*");
+  u32 start = symbol_value("start");
+  auto play = jak1::find_symbol_from_c("play");
+  if (!name || !gi || !start || !play.offset) {
+    lg::error("[salto] faltan *game-info*, start o 'play");
+    return s7.offset;
+  }
+  u32 gi_type = *Ptr<u32>(gi - 4).c();
+  u32 get_cont = Ptr<jak1::Type>(gi_type)->get_method(18).offset;  // get-continue-by-name
+  u64 a[2] = {gi, g_salto_string};
+  u64 cont = host_call(get_cont, 2, a);
+  if ((u32)cont == s7.offset || (u32)cont == 0) {
+    lg::error("[salto] punto de continuación {} desconocido", name);
+    return s7.offset;
+  }
+  lg::info("[salto] fotograma {}: (start 'play {})", g_fingerprint_frame, name);
+  u64 b[2] = {play.offset, cont};
+  return host_call(start, 2, b);
+}
 }  // namespace
+
+void before_kernel_dispatch() {
+  static const char* name = std::getenv("GOAL2C_SALTO");
+  if (!name || !*name || g_salto_hecho || !deterministic_mode()) {
+    return;
+  }
+  if (g_script_start < 0) {  // sin recorrido: el fotograma en que aparece Jak
+    if (!target_exists()) {
+      return;
+    }
+    g_script_start = (s64)g_fingerprint_frame;
+  }
+  static const u64 at = std::getenv("GOAL2C_SALTO_FOTOGRAMA")
+                            ? std::strtoull(std::getenv("GOAL2C_SALTO_FOTOGRAMA"), nullptr, 10)
+                            : 600;
+  if (g_fingerprint_frame < (u64)g_script_start + at) {
+    return;
+  }
+  g_salto_hecho = true;
+  // string GOAL con el nombre, en la zona de entradas (fuera del heap): basic en 4 mod 8
+  size_t len = strlen(name);
+  u32 slot = g_entry_next;
+  g_entry_next += (u32)((20 + len + 1 + kEntrySlot - 1) / kEntrySlot * kEntrySlot);
+  memset(Ptr<u8>(slot).c(), 0, 20 + len + 1);
+  *Ptr<u32>(slot + 16).c() = *(s7 + FIX_SYM_STRING_TYPE);
+  *Ptr<u32>(slot + 20).c() = (u32)len;
+  memcpy(Ptr<u8>(slot + 24).c(), name, len);
+  g_salto_string = slot + 20;
+  // como un envío del REPL: el kernel la ejecuta en el proceso del listener
+  jak1::ListenerFunction->value = make_c_entry((void*)salto_fn, Entry::ARGS);
+}
 
 bool deterministic_mode() {
   static const bool on =
@@ -1729,6 +1786,8 @@ int replaced_functions(const char*) {
 void frame_fingerprint(unsigned int) {}
 
 void scripted_pad(unsigned long long) {}
+
+void before_kernel_dispatch() {}
 
 bool deterministic_mode() {
   return false;

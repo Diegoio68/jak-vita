@@ -15,6 +15,8 @@
 # Uso: test/goal2c/frame_check.sh [librería.so]
 #   CHECK_X86_TWICE=1: compara dos ejecuciones todo x86 (comprueba que la huella es determinista)
 #   FRAME_MIN: fotogramas comunes mínimos para dar el resultado por bueno (por defecto 600)
+#   GOAL2C_SALTO=<punto de continuación>: salta a ese nivel (p. ej. beach-start) tras cargar
+#     village1; con FRAME_RECORRIDO= para validar el código de otros niveles (lote G).
 #   FRAME_RECORRIDO: guion de entrada de mando (por defecto test/goal2c/recorrido.txt: Jak anda,
 #     salta, pega... por Sandover; vacío = Jak en reposo). Ver scripted_pad en goal2c_jak1.cpp.
 set -uo pipefail
@@ -57,6 +59,10 @@ stamp="$(stat -c %Y "$ROOT/build/game/gk")_$(ls -t "$ROOT/out/jak1/obj" | head -
   xargs -I{} stat -c %Y "$ROOT/out/jak1/obj/{}")_$SECS"
 if [[ -n "$RECORRIDO" ]]; then
   stamp="${stamp}_r$(stat -c %Y "$RECORRIDO")"
+fi
+# salto de nivel (GOAL2C_SALTO, ver before_kernel_dispatch): otra referencia por nivel
+if [[ -n "${GOAL2C_SALTO:-}" ]]; then
+  stamp="${stamp}_s${GOAL2C_SALTO}"
 fi
 REF="$OUT/huella_ref_$stamp"
 if [[ "${CHECK_X86_TWICE:-0}" != 1 && -s "$REF.txt" && -s "$REF.estricto.txt" ]]; then
