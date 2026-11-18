@@ -322,6 +322,12 @@ junglefish goal_src/jak1/levels/jungle/junglefish.gc
 fisher goal_src/jak1/levels/jungle/fisher.gc
 jungle-part goal_src/jak1/levels/jungle/jungle-part.gc
 launcherdoor goal_src/jak1/levels/common/launcherdoor.gc
+target-racer-h goal_src/jak1/levels/racer_common/target-racer-h.gc
+racer-part goal_src/jak1/levels/racer_common/racer-part.gc
+racer goal_src/jak1/levels/racer_common/racer.gc
+target-racer goal_src/jak1/levels/racer_common/target-racer.gc
+racer-states goal_src/jak1/levels/racer_common/racer-states.gc
+collide-reaction-racer goal_src/jak1/levels/racer_common/collide-reaction-racer.gc
 blocking-plane goal_src/jak1/levels/common/blocking-plane.gc
 farmer goal_src/jak1/levels/village1/farmer.gc
 explorer goal_src/jak1/levels/village1/explorer.gc
@@ -346,5 +352,8 @@ misty-teetertotter goal_src/jak1/levels/misty/misty-teetertotter.gc
 balloonlurker goal_src/jak1/levels/misty/balloonlurker.gc
 misty-part goal_src/jak1/levels/misty/misty-part.gc
 sidekick-human goal_src/jak1/levels/misty/sidekick-human.gc
+firecanyon-part goal_src/jak1/levels/firecanyon/firecanyon-part.gc
+assistant-firecanyon goal_src/jak1/levels/firecanyon/assistant-firecanyon.gc
+firecanyon-obs goal_src/jak1/levels/firecanyon/firecanyon-obs.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
