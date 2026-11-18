@@ -324,6 +324,10 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   run-function-in-process) saltaba a basura. Ahora las llamadas C -> GOAL (g2c_call_goal8,
   g2c_call_goal_q) pasan por una rampa en la memoria GOAL ("call rax; ret", zona de entradas
   +0x30): la función GOAL ve una vuelta dentro de la memoria GOAL.
+- res-h y level-h (2026-11-18): se traducen DURANTE (mi) (goalc/c_backend/tools/emit_in_build.py,
+  test/goal2c/emit_in_build.txt; Compiler::asm_file con GOAL2C_EMIT_DIR/GOAL2C_EMIT_ONLY): así su
+  objeto sale idéntico. No van en game_only.txt (GameOnlyFiles los transpilaría después de (mi)).
+  Con esto, 9637/9648 funciones en C: solo quedan las 11 no traducibles (asm-func y .push/.add).
 - Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
   distintos: el inspect autogenerado depende del orden de compilación).
 

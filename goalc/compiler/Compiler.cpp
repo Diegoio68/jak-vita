@@ -1,5 +1,7 @@
 #include "Compiler.h"
 
+#include <cstdlib>
+
 #include <chrono>
 #include <thread>
 
@@ -541,6 +543,20 @@ void Compiler::asm_file(const CompilationOptions& options) {
   if (!options.goal2c_output_file.empty()) {
     goal2c_object_file(obj_file, obj_file_name, options.goal2c_output_file);
     return;
+  }
+  // goal2c (Jak Vita): GOAL2C_EMIT_DIR + GOAL2C_EMIT_ONLY=obj,obj: durante una compilación normal
+  // (p. ej. (mi)), esos ficheros se traducen a C en vez de compilarse, con el estado de tipos que
+  // tienen en ese punto de la compilación del juego (res-h y level-h: su inspect autogenerado
+  // depende de qué tipos existen ya; transpilados después de (mi) el objeto no sale idéntico).
+  // El objeto de goalc queda en <dir>/<obj>.c.o; el del juego no se toca.
+  if (const char* emit_dir = std::getenv("GOAL2C_EMIT_DIR"); emit_dir && *emit_dir) {
+    const char* only = std::getenv("GOAL2C_EMIT_ONLY");
+    if (only && ("," + std::string(only) + ",").find("," + obj_file_name + ",") !=
+                    std::string::npos) {
+      goal2c_object_file(obj_file, obj_file_name,
+                         std::string(emit_dir) + "/" + obj_file_name + ".c");
+      return;
+    }
   }
 
   if (options.color) {

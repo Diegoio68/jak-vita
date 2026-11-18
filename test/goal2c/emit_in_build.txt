@@ -1,0 +1,6 @@
+# goal2c (Jak Vita): ficheros que se traducen a C DURANTE la compilación del juego ((mi) con
+# GOAL2C_EMIT_DIR/GOAL2C_EMIT_ONLY), no después: su objeto depende del estado de tipos en ese
+# punto (inspect autogenerado). Ver goalc/c_backend/tools/emit_in_build.py.
+# Validados en el juego (recorrido oficial: huella x86 = C, colisión y cámara) el 2026-11-18.
+res-h goal_src/jak1/engine/entity/res-h.gc
+level-h goal_src/jak1/engine/level/level-h.gc
