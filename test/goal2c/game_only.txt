@@ -409,5 +409,11 @@ ogre-part goal_src/jak1/levels/ogre/ogre-part.gc
 ogreboss goal_src/jak1/levels/ogre/ogreboss.gc
 ogre-obs goal_src/jak1/levels/ogre/ogre-obs.gc
 flying-lurker goal_src/jak1/levels/ogre/flying-lurker.gc
+village3-part goal_src/jak1/levels/village3/village3-part.gc
+village3-obs goal_src/jak1/levels/village3/village3-obs.gc
+minecart goal_src/jak1/levels/village3/minecart.gc
+miners goal_src/jak1/levels/village3/miners.gc
+assistant-village3 goal_src/jak1/levels/village3/assistant-village3.gc
+sage-village3 goal_src/jak1/levels/village3/sage-village3.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
