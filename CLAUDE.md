@@ -308,6 +308,10 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   game_only.txt va en orden de compilación (all_objs.json): GameOnlyFiles transpila en ese orden
   y cada fichero necesita los tipos de los anteriores (validate_batch lo ordena al añadir).
   ARM: 7 casos (death-movie-remap); rigid-body.gc no está en GAME.CGO (no existe en las pruebas).
+- Lote E (2026-11-18): levels/training, village1, village_common, title, intro, common (19), con
+  el recorrido oficial. Sin casos ARM (los niveles no están en GAME.CGO: no existen en el runtime
+  de las pruebas). GameOnlyFiles hace (mi) antes de transpilar (title-obs usa static-screen-spawn
+  de levels/demo, aún sin validar).
 - Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
   distintos: el inspect autogenerado depende del orden de compilación).
 

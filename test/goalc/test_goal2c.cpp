@@ -544,6 +544,10 @@ TEST_F(Goal2CTests, GameOnlyFiles) {
   const auto out_dir = root / "out" / "goal2c" / "jak1";
   auto files = game_only_files();
   ASSERT_FALSE(files.empty());
+  // como validate_batch.py: (mi) deja en el compilador los tipos y funciones de todo el juego.
+  // Un fichero validado puede usar definiciones de otro que aún no lo está (title-obs usa
+  // static-screen-spawn de levels/demo); sin esto, error de compilación.
+  shared->compiler.run_front_end_on_string("(mi)");
   for (auto& f : files) {
     const auto c_file = out_dir / (f.obj + ".c");
     shared->compiler.run_front_end_on_string(

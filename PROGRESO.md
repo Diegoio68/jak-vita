@@ -27,7 +27,7 @@ goal2c ya traduce 9637/9648 (99.9 %).**
 | C | game, game/task, ui, ui/progress, debug | Hecho (43; ARM 58 OK) |
 | Suspend nativo | suspend/resume con copia de pila fuera del heap | Hecho (cam-states, target) |
 | D | target, common-obs | Hecho (10 + 27 ficheros; ARM 7 OK) |
-| E | levels/village1, village_common | Pendiente |
+| E | training, village1, village_common, title, intro, common | Hecho (19 ficheros, recorrido oficial) |
 | F | kernel + 8 funciones en ensamblador | Pendiente |
 | G | resto de niveles por DGO | Pendiente |
 | — | level-h y res-h (objeto no idéntico) | Al final |
