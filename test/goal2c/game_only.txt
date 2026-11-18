@@ -444,5 +444,9 @@ snow-ram-boss goal_src/jak1/levels/snow/snow-ram-boss.gc
 snow-ram goal_src/jak1/levels/snow/snow-ram.gc
 snow-part goal_src/jak1/levels/snow/snow-part.gc
 yeti goal_src/jak1/levels/snow/yeti.gc
+lavatube-obs goal_src/jak1/levels/lavatube/lavatube-obs.gc
+lavatube-energy goal_src/jak1/levels/lavatube/lavatube-energy.gc
+lavatube-part goal_src/jak1/levels/lavatube/lavatube-part.gc
+assistant-lavatube goal_src/jak1/levels/lavatube/assistant-lavatube.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
