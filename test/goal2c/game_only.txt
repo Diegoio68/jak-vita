@@ -6,6 +6,13 @@
 # collide-planes no está: aparece en all_objs.json pero no tiene fuente .gc en OpenGOAL.
 # res-h no está: su inspect autogenerado depende de si entity-links ya está definido del todo
 # (sesión con el motor compilado) o solo declarado, y el objeto no sale idéntico.
+gcommon goal_src/jak1/kernel/gcommon.gc
+gstring-h goal_src/jak1/kernel/gstring-h.gc
+gkernel-h goal_src/jak1/kernel/gkernel-h.gc
+pskernel goal_src/jak1/kernel/pskernel.gc
+gstring goal_src/jak1/kernel/gstring.gc
+dgo-h goal_src/jak1/kernel/dgo-h.gc
+gstate goal_src/jak1/kernel/gstate.gc
 types-h goal_src/jak1/engine/util/types-h.gc
 vu1-macros goal_src/jak1/engine/ps2/vu1-macros.gc
 gravity-h goal_src/jak1/engine/physics/gravity-h.gc
