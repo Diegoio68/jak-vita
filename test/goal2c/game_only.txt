@@ -311,6 +311,7 @@ villagep-obs goal_src/jak1/levels/village_common/villagep-obs.gc
 oracle goal_src/jak1/levels/village_common/oracle.gc
 battlecontroller goal_src/jak1/levels/common/battlecontroller.gc
 snow-bunny goal_src/jak1/levels/snow/snow-bunny.gc
+darkcave-obs goal_src/jak1/levels/darkcave/darkcave-obs.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
 jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
 bouncer goal_src/jak1/levels/jungle/bouncer.gc
