@@ -365,6 +365,13 @@ sage-bluehut goal_src/jak1/levels/village2/sage-bluehut.gc
 flutflut-bluehut goal_src/jak1/levels/village2/flutflut-bluehut.gc
 assistant-village2 goal_src/jak1/levels/village2/assistant-village2.gc
 sunken-elevator goal_src/jak1/levels/village2/sunken-elevator.gc
+swamp-obs goal_src/jak1/levels/swamp/swamp-obs.gc
+swamp-bat goal_src/jak1/levels/swamp/swamp-bat.gc
+swamp-rat goal_src/jak1/levels/swamp/swamp-rat.gc
+swamp-rat-nest goal_src/jak1/levels/swamp/swamp-rat-nest.gc
+kermit goal_src/jak1/levels/swamp/kermit.gc
+swamp-part goal_src/jak1/levels/swamp/swamp-part.gc
+billy goal_src/jak1/levels/swamp/billy.gc
 sunken-part goal_src/jak1/levels/sunken/sunken-part.gc
 sunken-part2 goal_src/jak1/levels/sunken/sunken-part2.gc
 sunken-part3 goal_src/jak1/levels/sunken/sunken-part3.gc
