@@ -319,6 +319,8 @@ citb-bunny goal_src/jak1/levels/citadel/citb-bunny.gc
 citb-drop-plat goal_src/jak1/levels/citadel/citb-drop-plat.gc
 assistant-citadel goal_src/jak1/levels/citadel/assistant-citadel.gc
 darkcave-obs goal_src/jak1/levels/darkcave/darkcave-obs.gc
+demo-obs goal_src/jak1/levels/demo/demo-obs.gc
+static-screen goal_src/jak1/levels/demo/static-screen.gc
 robotboss-h goal_src/jak1/levels/finalboss/robotboss-h.gc
 robotboss-part goal_src/jak1/levels/finalboss/robotboss-part.gc
 sage-finalboss-part goal_src/jak1/levels/finalboss/sage-finalboss-part.gc
