@@ -309,6 +309,16 @@ villagep-obs goal_src/jak1/levels/village_common/villagep-obs.gc
 oracle goal_src/jak1/levels/village_common/oracle.gc
 battlecontroller goal_src/jak1/levels/common/battlecontroller.gc
 evilbro goal_src/jak1/levels/intro/evilbro.gc
+jungle-elevator goal_src/jak1/levels/jungle/jungle-elevator.gc
+bouncer goal_src/jak1/levels/jungle/bouncer.gc
+hopper goal_src/jak1/levels/jungle/hopper.gc
+junglesnake goal_src/jak1/levels/jungle/junglesnake.gc
+darkvine goal_src/jak1/levels/jungle/darkvine.gc
+jungle-obs goal_src/jak1/levels/jungle/jungle-obs.gc
+jungle-mirrors goal_src/jak1/levels/jungle/jungle-mirrors.gc
+junglefish goal_src/jak1/levels/jungle/junglefish.gc
+fisher goal_src/jak1/levels/jungle/fisher.gc
+jungle-part goal_src/jak1/levels/jungle/jungle-part.gc
 launcherdoor goal_src/jak1/levels/common/launcherdoor.gc
 blocking-plane goal_src/jak1/levels/common/blocking-plane.gc
 farmer goal_src/jak1/levels/village1/farmer.gc
