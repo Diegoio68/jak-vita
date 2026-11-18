@@ -289,6 +289,8 @@ plat-button goal_src/jak1/engine/common-obs/plat-button.gc
 plat-eco goal_src/jak1/engine/common-obs/plat-eco.gc
 ropebridge goal_src/jak1/engine/common-obs/ropebridge.gc
 ticky goal_src/jak1/engine/common-obs/ticky.gc
+mistycannon goal_src/jak1/levels/misty/mistycannon.gc
+babak-with-cannon goal_src/jak1/levels/misty/babak-with-cannon.gc
 air-h goal_src/jak1/levels/beach/air-h.gc
 air goal_src/jak1/levels/beach/air.gc
 wobbler goal_src/jak1/levels/beach/wobbler.gc
@@ -333,5 +335,16 @@ village1-part2 goal_src/jak1/levels/village1/village1-part2.gc
 sequence-a-village1 goal_src/jak1/levels/village1/sequence-a-village1.gc
 training-obs goal_src/jak1/levels/training/training-obs.gc
 training-part goal_src/jak1/levels/training/training-part.gc
+misty-obs goal_src/jak1/levels/misty/misty-obs.gc
+misty-warehouse goal_src/jak1/levels/misty/misty-warehouse.gc
+misty-conveyor goal_src/jak1/levels/misty/misty-conveyor.gc
+mud goal_src/jak1/levels/misty/mud.gc
+muse goal_src/jak1/levels/misty/muse.gc
+bonelurker goal_src/jak1/levels/misty/bonelurker.gc
+quicksandlurker goal_src/jak1/levels/misty/quicksandlurker.gc
+misty-teetertotter goal_src/jak1/levels/misty/misty-teetertotter.gc
+balloonlurker goal_src/jak1/levels/misty/balloonlurker.gc
+misty-part goal_src/jak1/levels/misty/misty-part.gc
+sidekick-human goal_src/jak1/levels/misty/sidekick-human.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
