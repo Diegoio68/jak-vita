@@ -9,6 +9,7 @@
 gcommon goal_src/jak1/kernel/gcommon.gc
 gstring-h goal_src/jak1/kernel/gstring-h.gc
 gkernel-h goal_src/jak1/kernel/gkernel-h.gc
+gkernel goal_src/jak1/kernel/gkernel.gc
 pskernel goal_src/jak1/kernel/pskernel.gc
 gstring goal_src/jak1/kernel/gstring.gc
 dgo-h goal_src/jak1/kernel/dgo-h.gc

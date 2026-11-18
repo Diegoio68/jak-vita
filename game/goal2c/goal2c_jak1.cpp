@@ -131,7 +131,6 @@ g2c_call_goal_q:
   push r14
   push r15
   push rbx
-  sub rsp, 8
   mov rbx, rsi
   mov r13, rdx
   mov r14, rcx
@@ -153,9 +152,8 @@ g2c_call_goal_q:
   mov r9, [rbx + 40]
   mov r10, [rbx + 48]
   mov r11, [rbx + 56]
-  call rax
+  call [rip + g2c_goal_call_pad]
   movaps [rbx + 192], xmm0
-  add rsp, 8
   pop rbx
   pop r15
   pop r14
@@ -174,6 +172,11 @@ extern "C" u64 g2c_call_goal8(void* func, const u64* args, u64 pp, u64 st, void*
 // pp actual visto desde C (g_pp); el asm lo lee para recargar r13 al volver de C a x86
 extern "C" {
 u64 g2c_pp_cell asm("g2c_pp_cell") = 0;
+// Rampa C -> GOAL en la memoria GOAL ("call rax; ret"; ver install_call_pad): las llamadas de C a
+// GOAL pasan por ella para que la función GOAL vea una dirección de vuelta DENTRO de la memoria
+// GOAL. Código GOAL que la guarda como dirección GOAL de 32 bits (el new de catch-frame: catch y
+// throw de run-function-in-process) fallaba con la dirección del host.
+u64 g2c_goal_call_pad asm("g2c_goal_call_pad") = 0;
 }
 // x86 -> C como _arg_call_systemv / _stack_call_systemv del kernel (mismo marco), pero al volver
 // recargan r13 de g2c_pp_cell (ver g_pp).
@@ -270,7 +273,6 @@ g2c_call_goal8:
   push r14
   push r15
   push r9
-  sub rsp, 8
   mov r13, rdx
   mov r14, rcx
   mov r15, r8
@@ -283,8 +285,7 @@ g2c_call_goal8:
   mov r10, [rsi + 48]
   mov r11, [rsi + 56]
   mov rsi, [rsi + 8]
-  call rax
-  add rsp, 8
+  call [rip + g2c_goal_call_pad]
   pop r9
   mov [r9], r13
   pop r15
@@ -1118,6 +1119,14 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     g_entry_next = kEntryZoneStart + kEntrySlot;
     memset(Ptr<u8>(kEntryZoneStart).c(), 0, kEntrySlot);
     *Ptr<u32>(kDummySymbol).c() = s7.offset;  // valor #f
+    {  // rampa C -> GOAL: call rax ; ret
+      u8* pad = Ptr<u8>(kEntryZoneStart + 0x30).c();
+      pad[0] = 0xff;
+      pad[1] = 0xd0;
+      pad[2] = 0xc3;
+      flush_icache_goal(kEntryZoneStart + 0x30, 3);
+      g2c_goal_call_pad = (u64)pad;
+    }
     g_fingerprint_frame = 0;
     g_vclock_in_frame = 0;
     g_script_start = -1;

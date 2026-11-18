@@ -312,6 +312,18 @@ Código nuevo: vita/ y goalc/c_backend/. Cambios a upstream mínimos, detrás de
   el recorrido oficial. Sin casos ARM (los niveles no están en GAME.CGO: no existen en el runtime
   de las pruebas). GameOnlyFiles hace (mi) antes de transpilar (title-obs usa static-screen-spawn
   de levels/demo, aún sin validar).
+- Lote G (2026-11-18): resto de niveles, cada carpeta con GOAL2C_SALTO a su punto de
+  continuación (Jak quieto, 60 s de huella x86 = C): beach, jungle, jungleb (jungle-tower), misty,
+  firecanyon+racer_common, village2, sunken, swamp, rolling, ogre+flut_common, village3, snow,
+  maincave, darkcave, robocave, lavatube, citadel, finalboss, demo. Sin culpables. Ojo: con Jak
+  quieto solo corre lo que hay cerca del punto de continuación (validación más débil que el
+  recorrido; grabar recorridos de esos niveles la reforzaría).
+- Lote F (2026-11-18): kernel entero (sus 8 asm-func y las 2 con .push/.add siguen en x86).
+  gkernel caía: el new de catch-frame (asm) guarda la dirección de vuelta como dirección GOAL de
+  32 bits y, llamado desde C, era del host -> throw (go durante la inicialización en
+  run-function-in-process) saltaba a basura. Ahora las llamadas C -> GOAL (g2c_call_goal8,
+  g2c_call_goal_q) pasan por una rampa en la memoria GOAL ("call rax; ret", zona de entradas
+  +0x30): la función GOAL ve una vuelta dentro de la memoria GOAL.
 - Lote B (2026-11-17): 38 ficheros validados. level-h rechazado como res-h (objeto con 13 bytes
   distintos: el inspect autogenerado depende del orden de compilación).
 
