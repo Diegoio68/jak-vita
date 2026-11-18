@@ -329,6 +329,9 @@ target-racer goal_src/jak1/levels/racer_common/target-racer.gc
 racer-states goal_src/jak1/levels/racer_common/racer-states.gc
 collide-reaction-racer goal_src/jak1/levels/racer_common/collide-reaction-racer.gc
 blocking-plane goal_src/jak1/levels/common/blocking-plane.gc
+flut-part goal_src/jak1/levels/flut_common/flut-part.gc
+flutflut goal_src/jak1/levels/flut_common/flutflut.gc
+target-flut goal_src/jak1/levels/flut_common/target-flut.gc
 farmer goal_src/jak1/levels/village1/farmer.gc
 explorer goal_src/jak1/levels/village1/explorer.gc
 assistant goal_src/jak1/levels/village1/assistant.gc
@@ -402,5 +405,9 @@ rolling-lightning-mole goal_src/jak1/levels/rolling/rolling-lightning-mole.gc
 rolling-robber goal_src/jak1/levels/rolling/rolling-robber.gc
 rolling-race-ring goal_src/jak1/levels/rolling/rolling-race-ring.gc
 firecanyon-obs goal_src/jak1/levels/firecanyon/firecanyon-obs.gc
+ogre-part goal_src/jak1/levels/ogre/ogre-part.gc
+ogreboss goal_src/jak1/levels/ogre/ogreboss.gc
+ogre-obs goal_src/jak1/levels/ogre/ogre-obs.gc
+flying-lurker goal_src/jak1/levels/ogre/flying-lurker.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
