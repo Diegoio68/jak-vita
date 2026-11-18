@@ -397,6 +397,10 @@ double-lurker goal_src/jak1/levels/sunken/double-lurker.gc
 helix-water goal_src/jak1/levels/sunken/helix-water.gc
 puffer goal_src/jak1/levels/sunken/puffer.gc
 sunken-fish goal_src/jak1/levels/sunken/sunken-fish.gc
+rolling-obs goal_src/jak1/levels/rolling/rolling-obs.gc
+rolling-lightning-mole goal_src/jak1/levels/rolling/rolling-lightning-mole.gc
+rolling-robber goal_src/jak1/levels/rolling/rolling-robber.gc
+rolling-race-ring goal_src/jak1/levels/rolling/rolling-race-ring.gc
 firecanyon-obs goal_src/jak1/levels/firecanyon/firecanyon-obs.gc
 title-obs goal_src/jak1/levels/title/title-obs.gc
 bones goal_src/jak1/engine/gfx/foreground/bones.gc
