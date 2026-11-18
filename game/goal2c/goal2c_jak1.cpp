@@ -424,6 +424,38 @@ u64 g_vclock_in_frame = 0;    // reloj virtual: ticks dentro del fotograma actua
 s64 g_script_start = -1;      // recorrido guionizado: fotograma en que apareció *target*
 u32 g_salto_string = 0;       // GOAL2C_SALTO: nombre del punto de continuación (string GOAL)
 bool g_salto_hecho = false;
+// salto de nivel: de GOAL2C_SALTO / GOAL2C_SALTO_FOTOGRAMA o de la línea "# salto <punto> <n>"
+// de la grabación (ver load_script); vacío = sin salto
+std::string g_salto_name;
+u64 g_salto_at = 600;
+bool g_salto_env_read = false;
+// progreso que se aplica tras el salto (GOAL2C_PROGRESO=tarea,tarea / GOAL2C_CELULAS=n, o las
+// líneas "# progreso ..." y "# celulas n" de la grabación): tareas con todas sus etapas cerradas
+std::vector<int> g_progreso_tareas;
+int g_progreso_celulas = -1;
+
+void salto_config_from_env() {
+  if (g_salto_env_read) {
+    return;
+  }
+  g_salto_env_read = true;
+  if (const char* n = std::getenv("GOAL2C_SALTO"); n && *n) {
+    g_salto_name = n;
+    if (const char* f = std::getenv("GOAL2C_SALTO_FOTOGRAMA"); f && *f) {
+      g_salto_at = std::strtoull(f, nullptr, 10);
+    }
+    if (const char* p = std::getenv("GOAL2C_PROGRESO"); p && *p) {
+      for (const char* c = p; *c;) {
+        g_progreso_tareas.push_back(std::atoi(c));
+        while (*c && *c != ',') c++;
+        if (*c == ',') c++;
+      }
+    }
+    if (const char* c = std::getenv("GOAL2C_CELULAS"); c && *c) {
+      g_progreso_celulas = std::atoi(c);
+    }
+  }
+}
 
 u32 host_symbol(const char* name) {
   // Casi siempre el símbolo ya existe (el objeto x86 lo internó al enlazarse). Si no, crearlo
@@ -1131,6 +1163,11 @@ void after_link_jak1(const char* object_name, ObjectFileHeader* ofh) {
     g_vclock_in_frame = 0;
     g_script_start = -1;
     g_salto_hecho = false;
+    g_salto_name.clear();
+    g_salto_at = 600;
+    g_progreso_tareas.clear();
+    g_progreso_celulas = -1;
+    g_salto_env_read = false;
     det_sound_reset();
     if (deterministic_mode()) {
       install_segv_handler();  // también en x86 puro (diagnóstico de la huella y la grabación)
@@ -1393,6 +1430,24 @@ void load_script(const char* path) {
         g_sync.push_back({t, false, 0, 0, 0});
       } else if (strncmp(line, "# sin-repetir", 13) == 0) {
         g_script_repeat = false;
+      } else if (strncmp(line, "# salto ", 8) == 0) {
+        char sname[64];
+        unsigned long long at = 600;
+        salto_config_from_env();
+        if (g_salto_name.empty() && sscanf(line, "# salto %63s %llu", sname, &at) >= 1) {
+          g_salto_name = sname;  // la grabación arranca en un nivel: el salto se repite
+          g_salto_at = at;
+        }
+      } else if (strncmp(line, "# progreso", 10) == 0) {
+        g_progreso_tareas.clear();
+        for (const char* c = line + 10; *c;) {
+          while (*c == ' ') c++;
+          if (*c < '0' || *c > '9') break;
+          g_progreso_tareas.push_back(std::atoi(c));
+          while (*c >= '0' && *c <= '9') c++;
+        }
+      } else if (strncmp(line, "# celulas ", 10) == 0) {
+        g_progreso_celulas = std::atoi(line + 10);
       }
       continue;
     }
@@ -1519,17 +1574,32 @@ void grab_pad(const char* path, const CPadInfo* pad, u64 t) {
             "# goal2c (Jak Vita): recorrido grabado (task boot-game GRABAR=<fichero>).\n"
             "# Formato: duración botones lx ly rx ry presión x12; # sync = posición de Jak.\n"
             "# sin-repetir\n");
+    salto_config_from_env();
+    if (!g_salto_name.empty()) {
+      fprintf(g_rec_pad, "# salto %s %llu\n", g_salto_name.c_str(),
+              (unsigned long long)g_salto_at);
+      if (!g_progreso_tareas.empty()) {
+        fprintf(g_rec_pad, "# progreso");
+        for (int t : g_progreso_tareas) {
+          fprintf(g_rec_pad, " %d", t);
+        }
+        fprintf(g_rec_pad, "\n");
+      }
+      if (g_progreso_celulas >= 0) {
+        fprintf(g_rec_pad, "# celulas %d\n", g_progreso_celulas);
+      }
+    }
     lg::info("[grabación] grabando el mando 0 en {}", path);
   }
   record_pad(pad, t);
 }
 
 u64 salto_fn() {
-  const char* name = std::getenv("GOAL2C_SALTO");
+  const char* name = g_salto_name.c_str();
   u32 gi = symbol_value("*game-info*");
   u32 start = symbol_value("start");
   auto play = jak1::find_symbol_from_c("play");
-  if (!name || !gi || !start || !play.offset) {
+  if (!*name || !gi || !start || !play.offset) {
     lg::error("[salto] faltan *game-info*, start o 'play");
     return s7.offset;
   }
@@ -1543,25 +1613,39 @@ u64 salto_fn() {
   }
   lg::info("[salto] fotograma {}: (start 'play {})", g_fingerprint_frame, name);
   u64 b[2] = {play.offset, cont};
-  return host_call(start, 2, b);
+  u64 ret = host_call(start, 2, b);
+  // progreso necesario para la mecánica del nivel (flut flut, zoomer...)
+  u32 close_task = symbol_value("close-specific-task!");
+  for (int task : g_progreso_tareas) {
+    for (u64 status = 2; status <= 7; status++) {  // need-hint .. need-resolution
+      u64 c[2] = {(u64)task, status};
+      host_call(close_task, 2, c);
+    }
+  }
+  if (g_progreso_celulas >= 0) {
+    *Ptr<float>(gi - 4 + 96).c() = (float)g_progreso_celulas;  // game-info fuel
+  }
+  if (!g_progreso_tareas.empty() || g_progreso_celulas >= 0) {
+    lg::info("[salto] progreso: {} tareas cerradas, {} células", g_progreso_tareas.size(),
+             g_progreso_celulas);
+  }
+  return ret;
 }
 }  // namespace
 
 void before_kernel_dispatch() {
-  static const char* name = std::getenv("GOAL2C_SALTO");
-  if (!name || !*name || g_salto_hecho || !deterministic_mode()) {
+  salto_config_from_env();
+  if (g_salto_name.empty() || g_salto_hecho || !deterministic_mode()) {
     return;
   }
+  const char* name = g_salto_name.c_str();
   if (g_script_start < 0) {  // sin recorrido: el fotograma en que aparece Jak
     if (!target_exists()) {
       return;
     }
     g_script_start = (s64)g_fingerprint_frame;
   }
-  static const u64 at = std::getenv("GOAL2C_SALTO_FOTOGRAMA")
-                            ? std::strtoull(std::getenv("GOAL2C_SALTO_FOTOGRAMA"), nullptr, 10)
-                            : 600;
-  if (g_fingerprint_frame < (u64)g_script_start + at) {
+  if (g_fingerprint_frame < (u64)g_script_start + g_salto_at) {
     return;
   }
   g_salto_hecho = true;
@@ -1609,8 +1693,16 @@ void scripted_pad(unsigned long long cpad_info) {
     lg::info("[recorrido] empieza en el fotograma {}", g_fingerprint_frame);
   }
   u64 t = g_fingerprint_frame - (u64)g_script_start;
+  // con salto de nivel: mando en reposo hasta que se haya hecho (el juego sigue en el título)
+  salto_config_from_env();
+  const bool salto_pendiente = !g_salto_name.empty() && !g_salto_hecho;
 
   if (!(replay && *replay)) {  // solo grabación: el mando real
+    if (salto_pendiente) {
+      pad->button0 = 0;
+      pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
+      memset(pad->abutton, 0, sizeof(pad->abutton));
+    }
     grab_pad(grab, pad, t);
     return;
   }
@@ -1656,6 +1748,11 @@ void scripted_pad(unsigned long long cpad_info) {
         break;
       }
     }
+  }
+  if (salto_pendiente) {
+    pad->button0 = 0;
+    pad->leftx = pad->lefty = pad->rightx = pad->righty = 128;
+    memset(pad->abutton, 0, sizeof(pad->abutton));
   }
   // con GOAL2C_GRABAR además: graba la entrada inyectada (prueba de la grabación sin ventana)
   if (grab && *grab) {

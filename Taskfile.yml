@@ -49,7 +49,8 @@ tasks:
       - '{{.DECOMP_BIN_RELEASE_DIR}}/decompiler "./decompiler/config/{{.DECOMP_CONFIG}}" "./iso_data" "./decompiler_out" --version "{{.DECOMP_CONFIG_VERSION}}" --config-override ''{"decompile_code": false, "levels_extract": true, "allowed_objects": []}'''
   boot-game:
     # goal2c (Jak Vita): con GRABAR=<fichero> graba el mando 0 como recorrido (task boot-game
-    # GRABAR=test/goal2c/recorrido_oficial.txt): todo x86, sin -debug, modo determinista (reloj
+    # GRABAR=test/goal2c/recorrido_oficial.txt; con NIVEL=<punto de continuación> arranca en ese
+    # nivel, p. ej. NIVEL=snow-flut-flut): todo x86, sin -debug, modo determinista (reloj
     # virtual, cargas síncronas) y configuración limpia (sin partidas guardadas), igual que la
     # reproducción de test/goal2c/frame_check.sh.
     desc: "Boots the game, it will fail if it's not already compiled! (GRABAR=<fichero>: graba el mando)"
@@ -57,7 +58,7 @@ tasks:
       - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
-      - '{{if .GRABAR}}test/goal2c/grabar.sh "{{.GRABAR}}"{{else}}{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -boot -fakeiso -debug{{end}}'
+      - '{{if .GRABAR}}test/goal2c/grabar.sh "{{.GRABAR}}" "{{.NIVEL}}"{{else}}{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -boot -fakeiso -debug{{end}}'
   boot-game-retail:
     desc: "Boots the game without debug mode, it will fail if it's not already compiled!"
     preconditions:
